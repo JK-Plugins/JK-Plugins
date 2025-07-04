@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "libs",
+    "stroke",
+]
+
+[patch.crates-io.win_dbg_logger]
+git = "https://github.com/wladwm/win_dbg_logger"
+branch = "master"
