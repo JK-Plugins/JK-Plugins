@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "libs",
-    "stroke",
 ]
 
 [patch.crates-io.win_dbg_logger]
