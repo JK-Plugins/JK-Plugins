@@ -1,13 +1,18 @@
 //! 色グループ内の境界グラデーション本体。
 //!
 //! 1. ラベル付け：各ピクセルがグループ内の何番目の色か（グループ外は NONE）
-//! 2. 境界シード：4近傍に別ラベルを持つピクセル。相手のラベルを記録
-//! 3. 距離変換1回：全ピクセルについて最近傍シードを求める（色数に依存しない）
-//! 4. 境界をまたいで連続する値 v（下側の色=0 → 上側の色=1）を作る
-//! 5. しきい値マップで v を2値化（＋任意でサブピクセルAA）し、2色を混ぜる
+//! 2. 色ごとの距離変換：その色の領域までの距離を、領域の周り（届く範囲）だけ求める
+//! 3. 符号付き距離 s_k（領域の内側で負）から重み w_k = clamp(0.5 - s_k / W) を作り、正規化
+//!    - 2色の境界では従来どおり直線的なグラデーション
+//!    - 3色以上が接する点でも、どの重みも位置に対して連続なので継ぎ目が出ない
+//! 4. しきい値マップ t に対して、番号の大きい色から重みを積み上げ、t が入った区間の色を選ぶ
+//!    （2色なら「t < 上側の色の重み」で上側の色。3色以上では網点が入れ子になる）
 
-use super::edt::{nearest_seed, NO_SEED};
+use super::edt::nearest_seed;
 use super::texture::{fbm, Texture, TextureKind};
+
+/// 1ピクセルが考慮する、近くにある他の色の数の上限
+const MAX_NEIGHBORS: usize = 4;
 
 pub const NONE: u8 = u8::MAX;
 pub const MAX_COLORS: usize = 32;
@@ -34,6 +39,7 @@ pub struct Settings {
     /// グラデーション全体の幅（px）。境界の両側に半分ずつ
     pub width: f32,
     /// 境界の位置ずらし（px）。＋で番号の大きい色側へ境界が進む
+    /// （隣り合う番号の組で offset、番号が k 離れた組では k 倍）
     pub offset: f32,
     pub curve: Curve,
     /// テクスチャの効き（0 = なめらか、1 = 完全に2値化）
@@ -107,6 +113,48 @@ fn label_pixels(src: &[[f32; 4]], s: &Settings) -> Vec<u8> {
     labels
 }
 
+#[derive(Clone, Copy)]
+struct Near {
+    n: u8,
+    label: [u8; MAX_NEIGHBORS],
+    dist: [f32; MAX_NEIGHBORS],
+}
+
+impl Near {
+    const EMPTY: Near = Near {
+        n: 0,
+        label: [NONE; MAX_NEIGHBORS],
+        dist: [f32::INFINITY; MAX_NEIGHBORS],
+    };
+
+    /// 近い順に MAX_NEIGHBORS 個まで保持
+    fn insert(&mut self, label: u8, dist: f32) {
+        let n = self.n as usize;
+        if n < MAX_NEIGHBORS {
+            self.label[n] = label;
+            self.dist[n] = dist;
+            self.n += 1;
+            return;
+        }
+        let (mut worst, mut wd) = (0, self.dist[0]);
+        for i in 1..MAX_NEIGHBORS {
+            if self.dist[i] > wd {
+                worst = i;
+                wd = self.dist[i];
+            }
+        }
+        if dist < wd {
+            self.label[worst] = label;
+            self.dist[worst] = dist;
+        }
+    }
+}
+
+#[inline]
+fn smooth(w: f32) -> f32 {
+    w * w * (3.0 - 2.0 * w)
+}
+
 pub fn process(w: usize, h: usize, src: &[[f32; 4]], s: &Settings, texture: &Texture) -> Output {
     assert_eq!(src.len(), w * h);
     let n = w * h;
@@ -114,51 +162,82 @@ pub fn process(w: usize, h: usize, src: &[[f32; 4]], s: &Settings, texture: &Tex
         rgba: src.to_vec(),
         changed: vec![false; n],
     };
-    if s.colors.len() < 2 || n == 0 {
+    let nc = s.colors.len();
+    if nc < 2 || n == 0 {
         return out;
     }
 
     let labels = label_pixels(src, s);
 
-    // 境界シード：4近傍に別のグループ色があるピクセル
-    let mut seed = vec![false; n];
-    let mut other = vec![NONE; n];
+    let half = (s.width * 0.5).max(0.0);
+    // ラベル k のバイアス。番号の大きい色ほど符号付き距離を大きく（＝狭く）する
+    let bias = |k: u8| 2.0 * s.offset * (k as f32 - (nc as f32 - 1.0) * 0.5);
+    let max_bias = s.offset.abs() * (nc as f32 - 1.0);
+    // これより遠い色は重みに効かない
+    let reach = half + 0.5 + 2.0 * max_bias + 2.0 * s.roughness.abs() + 1.0;
+    let reach_i = reach.ceil() as i64;
+    let reach2 = reach * reach;
+
+    // 色ごとの領域の外接矩形
+    let mut bbox = vec![(usize::MAX, usize::MAX, 0usize, 0usize); nc];
+    let mut present = vec![false; nc];
     for y in 0..h {
         for x in 0..w {
-            let i = y * w + x;
-            let a = labels[i];
-            if a == NONE {
-                continue;
-            }
-            let mut b = NONE;
-            if x > 0 && labels[i - 1] != NONE && labels[i - 1] != a {
-                b = labels[i - 1];
-            } else if x + 1 < w && labels[i + 1] != NONE && labels[i + 1] != a {
-                b = labels[i + 1];
-            } else if y > 0 && labels[i - w] != NONE && labels[i - w] != a {
-                b = labels[i - w];
-            } else if y + 1 < h && labels[i + w] != NONE && labels[i + w] != a {
-                b = labels[i + w];
-            }
-            if b != NONE {
-                seed[i] = true;
-                other[i] = b;
+            let l = labels[y * w + x];
+            if l != NONE {
+                let b = &mut bbox[l as usize];
+                b.0 = b.0.min(x);
+                b.1 = b.1.min(y);
+                b.2 = b.2.max(x);
+                b.3 = b.3.max(y);
+                present[l as usize] = true;
             }
         }
     }
-    if !seed.iter().any(|&b| b) {
+    if present.iter().filter(|&&p| p).count() < 2 {
         return out;
     }
 
-    let (near, d2) = nearest_seed(w, h, &seed);
+    // 色ごとに、領域の周り reach の範囲だけ距離変換し、近くの色として登録
+    let mut near = vec![Near::EMPTY; n];
+    let mut seed = Vec::new();
+    for k in 0..nc {
+        if !present[k] {
+            continue;
+        }
+        let (x0, y0, x1, y1) = bbox[k];
+        let x0 = (x0 as i64 - reach_i).max(0) as usize;
+        let y0 = (y0 as i64 - reach_i).max(0) as usize;
+        let x1 = ((x1 as i64 + reach_i) as usize).min(w - 1);
+        let y1 = ((y1 as i64 + reach_i) as usize).min(h - 1);
+        let (bw, bh) = (x1 - x0 + 1, y1 - y0 + 1);
+        seed.clear();
+        seed.resize(bw * bh, false);
+        for y in 0..bh {
+            for x in 0..bw {
+                seed[y * bw + x] = labels[(y + y0) * w + x + x0] == k as u8;
+            }
+        }
+        let (_, d2) = nearest_seed(bw, bh, &seed);
+        for y in 0..bh {
+            for x in 0..bw {
+                let dd = d2[y * bw + x];
+                if dd > reach2 || dd == 0.0 {
+                    continue;
+                }
+                let i = (y + y0) * w + x + x0;
+                if labels[i] != NONE {
+                    near[i].insert(k as u8, dd.sqrt());
+                }
+            }
+        }
+    }
 
-    let half = (s.width * 0.5).max(0.0);
-    let reach = half + s.offset.abs() + s.roughness.abs() + 1.0;
-    let reach2 = reach * reach;
     let inv_w = if s.width > 1e-4 { 1.0 / s.width } else { 0.0 };
     let use_tex = texture.kind() != TextureKind::Smooth && s.amount > 0.0;
     let aa = s.antialias && texture.is_continuous();
     let (ox, oy) = (s.origin.0 as f32, s.origin.1 as f32);
+    let rough_sc = 1.0 / s.rough_scale.max(0.5);
 
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -167,9 +246,8 @@ pub fn process(w: usize, h: usize, src: &[[f32; 4]], s: &Settings, texture: &Tex
         .max(1);
     let rows_per = (h + threads - 1) / threads;
     let labels = &labels;
-    let other = &other;
     let near = &near;
-    let d2 = &d2;
+    let bias = &bias;
 
     std::thread::scope(|sc| {
         for (ci, (rgba_chunk, ch_chunk)) in out
@@ -179,90 +257,130 @@ pub fn process(w: usize, h: usize, src: &[[f32; 4]], s: &Settings, texture: &Tex
             .enumerate()
         {
             sc.spawn(move || {
+                // 候補：自分 + 近くの色（最大 MAX_NEIGHBORS）
+                let mut cl = [NONE; MAX_NEIGHBORS + 1];
+                let mut cw = [0f32; MAX_NEIGHBORS + 1];
                 let rows = rgba_chunk.len() / w;
                 for r in 0..rows {
                     let y = ci * rows_per + r;
                     for x in 0..w {
                         let i = y * w + x;
                         let a = labels[i];
-                        if a == NONE || near[i] == NO_SEED || d2[i] > reach2 {
+                        let nb = &near[i];
+                        if a == NONE || nb.n == 0 {
                             continue;
                         }
-                        let si = near[i] as usize;
-                        let (sl, so) = (labels[si], other[si]);
-                        let dist = d2[i].sqrt();
-                        // 境界（シードとその隣のピクセルの中間）までの距離
-                        let (b, d) = if a == sl {
-                            (so, dist + 0.5)
-                        } else if a == so {
-                            (sl, (dist - 0.5).max(0.0))
-                        } else {
-                            continue; // この色の境界ではない（線などを挟んだ先）
-                        };
-                        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
-                        // 上側の色(hi)に向かって＋の符号付き距離
-                        let mut xpos = if a == hi { d } else { -d };
                         let gx = x as f32 + 0.5 + ox;
                         let gy = y as f32 + 0.5 + oy;
-                        if s.roughness != 0.0 {
-                            let sc = 1.0 / s.rough_scale.max(0.5);
-                            xpos += s.roughness * (2.0 * fbm(gx * sc, gy * sc, s.rough_seed) - 1.0);
-                        }
-                        xpos -= s.offset;
-                        let mut v = if inv_w > 0.0 {
-                            (0.5 + xpos * inv_w).clamp(0.0, 1.0)
-                        } else if xpos >= 0.0 {
-                            1.0
-                        } else {
-                            0.0
+                        let rough = |k: u8| -> f32 {
+                            if s.roughness == 0.0 {
+                                0.0
+                            } else {
+                                let sd = s.rough_seed ^ (k as u32).wrapping_mul(0x9e37_79b9);
+                                s.roughness * (2.0 * fbm(gx * rough_sc, gy * rough_sc, sd) - 1.0)
+                            }
                         };
-                        if s.curve == Curve::Smooth {
-                            v = v * v * (3.0 - 2.0 * v);
+                        let weight = |sd: f32| -> f32 {
+                            let v = if inv_w > 0.0 {
+                                (0.5 - sd * inv_w).clamp(0.0, 1.0)
+                            } else if sd < 0.0 {
+                                1.0
+                            } else if sd == 0.0 {
+                                0.5
+                            } else {
+                                0.0
+                            };
+                            if s.curve == Curve::Smooth {
+                                smooth(v)
+                            } else {
+                                v
+                            }
+                        };
+
+                        // 自分の色：内側なので符号付き距離は負（いちばん近い他の色の境界まで）
+                        let mut dmin = f32::INFINITY;
+                        for j in 0..nb.n as usize {
+                            dmin = dmin.min(nb.dist[j]);
+                        }
+                        let mut m = 0;
+                        cl[m] = a;
+                        cw[m] = weight(-(dmin - 0.5) + bias(a) + rough(a));
+                        m += 1;
+                        for j in 0..nb.n as usize {
+                            let k = nb.label[j];
+                            cl[m] = k;
+                            cw[m] = weight(nb.dist[j] - 0.5 + bias(k) + rough(k));
+                            m += 1;
+                        }
+                        let sum: f32 = cw[..m].iter().sum();
+                        if sum <= 0.0 {
+                            continue;
+                        }
+                        for v in &mut cw[..m] {
+                            *v /= sum;
                         }
 
                         if s.output == OutputMode::Gradient {
+                            // 番号の重み付き平均（0..1）
+                            let mut v = 0.0;
+                            for j in 0..m {
+                                v += cw[j] * cl[j] as f32;
+                            }
+                            let v = v / (nc as f32 - 1.0);
                             rgba_chunk[r * w + x] = [v, v, v, 1.0];
                             ch_chunk[r * w + x] = true;
                             continue;
                         }
 
-                        let cov = if !use_tex {
-                            v
-                        } else {
-                            let hard = if aa {
-                                let mut on = 0u32;
+                        // 最終的な各色の割合
+                        let mut frac = cw;
+                        if use_tex {
+                            // 番号の大きい色から積み上げる
+                            let mut order = [0usize; MAX_NEIGHBORS + 1];
+                            for j in 0..m {
+                                order[j] = j;
+                            }
+                            order[..m].sort_unstable_by(|&p, &q| cl[q].cmp(&cl[p]));
+                            let mut cnt = [0f32; MAX_NEIGHBORS + 1];
+                            let mut pick = |t: f32, add: f32| {
+                                let mut acc = 0.0;
+                                for &j in &order[..m] {
+                                    acc += cw[j];
+                                    if t < acc {
+                                        cnt[j] += add;
+                                        return;
+                                    }
+                                }
+                                cnt[order[m - 1]] += add;
+                            };
+                            if aa {
                                 for sy in 0..4 {
                                     for sx in 0..4 {
                                         let px = gx + (sx as f32 + 0.5) * 0.25 - 0.5;
                                         let py = gy + (sy as f32 + 0.5) * 0.25 - 0.5;
-                                        if texture.threshold(px, py) < v {
-                                            on += 1;
-                                        }
+                                        pick(texture.threshold(px, py), 1.0 / 16.0);
                                     }
                                 }
-                                on as f32 / 16.0
-                            } else if texture.threshold(gx, gy) < v {
-                                1.0
                             } else {
-                                0.0
-                            };
-                            v + (hard - v) * s.amount
-                        };
+                                pick(texture.threshold(gx, gy), 1.0);
+                            }
+                            for j in 0..m {
+                                frac[j] = cw[j] + (cnt[j] - cw[j]) * s.amount;
+                            }
+                        }
 
                         // 自分の色のままなら入力をそのまま残す
-                        let own = if a == hi { 1.0 } else { 0.0 };
-                        if (cov - own).abs() < 1e-6 {
+                        if frac[0] >= 1.0 - 1e-6 {
                             continue;
                         }
-                        let c0 = s.colors[lo as usize];
-                        let c1 = s.colors[hi as usize];
-                        let alpha = src[i][3];
-                        rgba_chunk[r * w + x] = [
-                            c0[0] + (c1[0] - c0[0]) * cov,
-                            c0[1] + (c1[1] - c0[1]) * cov,
-                            c0[2] + (c1[2] - c0[2]) * cov,
-                            alpha,
-                        ];
+                        let mut c = [0f32; 3];
+                        for j in 0..m {
+                            let col = s.colors[cl[j] as usize];
+                            for ch in 0..3 {
+                                c[ch] += col[ch] * frac[j];
+                            }
+                        }
+                        rgba_chunk[r * w + x] = [c[0], c[1], c[2], src[i][3]];
                         ch_chunk[r * w + x] = true;
                     }
                 }
@@ -363,5 +481,47 @@ mod tests {
         }
         let r = on as f32 / total as f32;
         assert!((r - 0.5).abs() < 0.05, "{r}");
+    }
+
+    /// 3色が1点で接するところでも、隣り合うピクセルの色が急に変わらない
+    #[test]
+    fn triple_junction_is_continuous() {
+        let (w, h) = (120usize, 120usize);
+        let cols = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let src: Vec<[f32; 4]> = (0..w * h)
+            .map(|i| {
+                let x = (i % w) as f32 + 0.5 - 60.0;
+                let y = (i / w) as f32 + 0.5 - 60.0;
+                let a = y.atan2(x).to_degrees().rem_euclid(360.0);
+                let c = cols[if a < 120.0 {
+                    0
+                } else if a < 240.0 {
+                    1
+                } else {
+                    2
+                }];
+                [c[0], c[1], c[2], 1.0]
+            })
+            .collect();
+        let s = Settings {
+            colors: cols.to_vec(),
+            width: 30.0,
+            ..Default::default()
+        };
+        let tex = Texture::new(TextureParams::default(), None);
+        let o = process(w, h, &src, &s, &tex);
+        let mut worst = 0f32;
+        for y in 0..h {
+            for x in 0..w - 1 {
+                for (p, q) in [(y * w + x, y * w + x + 1), (x * w + y, (x + 1) * w + y)] {
+                    let d = (0..3)
+                        .map(|c| (o.rgba[p][c] - o.rgba[q][c]).abs())
+                        .fold(0.0, f32::max);
+                    worst = worst.max(d);
+                }
+            }
+        }
+        // 幅30pxの直線グラデなら1pxあたり約0.033。継ぎ目があると0.3以上になる
+        assert!(worst < 0.08, "max step {worst}");
     }
 }
