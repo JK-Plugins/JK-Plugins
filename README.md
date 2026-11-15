@@ -59,7 +59,7 @@ cargo install --git https://github.com/JK-Plugins/cargo-jk
 
 Run the following command to build the project:
 ```bash
-cd pixelselector
+cd colorgradient
 cargo jk install
 # this is the same as `cargo jk build && cargo jk mv [plugin_path]`
 ```
