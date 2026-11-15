@@ -3,5 +3,7 @@ pub mod edt;
 pub mod process;
 pub mod texture;
 
-pub use process::{process, Curve, Output, OutputMode, Settings, MAX_COLORS, NONE};
-pub use texture::{LayerTexture, Texture, TextureKind, TextureParams};
+pub use process::{
+    process, Curve, GroupColor, Output, OutputMode, Settings, MAX_COLORS, MAX_NEIGHBORS, NONE,
+};
+pub use texture::{DotShape, LayerTexture, Texture, TextureKind, TextureParams};
