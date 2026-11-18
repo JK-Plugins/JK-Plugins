@@ -15,7 +15,7 @@ fn main() {
         const EFFECT_VERSION_MINOR: u32 = 0;
         const EFFECT_VERSION_PATCH: u32 = 1;
 
-        const EFFECT_NAME: &str = "JK Color Gradient";
+        const EFFECT_NAME: &str = "JK Tone Gradient";
 
         pipl::plugin_build(vec![
             Property::Kind(PIPLType::AEEffect),

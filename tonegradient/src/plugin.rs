@@ -405,7 +405,7 @@ impl AdobePluginGlobal for Plugin {
     ) -> Result<(), ae::Error> {
         match cmd {
             ae::Command::About => {
-                out_data.set_return_msg("JK Color Gradient\rGradients between grouped colors with halftone / dither / texture.");
+                out_data.set_return_msg("JK Tone Gradient\rGradients between grouped colors with halftone / dither / texture.");
             }
             ae::Command::GlobalSetup => {
                 self.global_setup(&in_data)?;

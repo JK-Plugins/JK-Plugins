@@ -1,4 +1,4 @@
-# JK Color Gradient
+# JK Tone Gradient
 
 指定した色のグループ（最大32色）の中で、色と色の境界をグラデーションにし、
 しきい値マップ（網点・線・ディザ・ノイズ・任意レイヤー）で質感をつける After Effects プラグインです。
@@ -102,7 +102,7 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 ## ビルド
 
 ```sh
-cd colorgradient
+cd tonegradient
 just release     # または cargo jk install
 ```
 
