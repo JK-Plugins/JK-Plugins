@@ -1,5 +1,5 @@
-BuildName        := "colorgradient"
-PluginName       := "JK Color Gradient"
+BuildName        := "tonegradient"
+PluginName       := "JK Tone Gradient"
 BundleIdentifier := "com.adobe.AfterEffects.{{BuildName}}"
 BinaryName       := replace(lowercase(BuildName), "-", "_")
 

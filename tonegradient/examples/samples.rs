@@ -7,7 +7,7 @@
 //!
 //! `out_dir` に `<シート名>__<番号>__<ラベル>.ppm` を書き出す。
 
-use colorgradient::engine::*;
+use tonegradient::engine::*;
 use std::io::Write;
 
 const W: usize = 360;
@@ -90,7 +90,7 @@ fn paper(w: usize, h: usize) -> Vec<f32> {
 }
 
 fn texture_hash(x: i32, y: i32) -> u32 {
-    colorgradient::engine::texture::hash2(x, y, 77)
+    tonegradient::engine::texture::hash2(x, y, 77)
 }
 
 fn colors() -> Vec<GroupColor> {

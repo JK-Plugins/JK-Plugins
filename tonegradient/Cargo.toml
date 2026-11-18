@@ -1,11 +1,11 @@
 [package]
-name = "colorgradient"
+name = "tonegradient"
 version = "0.0.1"
 edition = "2021"
 
 [package.metadata.jk_plugin]
-plugin_name = "JK Color Gradient"
-identifier = "com.adobe.AfterEffects.colorgradient"
+plugin_name = "JK Tone Gradient"
+identifier = "com.adobe.AfterEffects.tonegradient"
 
 [profile.release]
 debug = true
