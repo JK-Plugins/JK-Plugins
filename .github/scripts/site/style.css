@@ -108,7 +108,21 @@ nav.top a.gh:hover { color: var(--ink); }
 .poster h3 { margin: 0; font: 400 clamp(26px, 2.6vw, 36px)/.94 var(--serif); letter-spacing: -.035em; text-wrap: balance; }
 .poster h3 a:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .12em; }
 /* タイルの差し色は、日付の横の小さな 5 色だけ */
-.meta .band { width: 16px; margin-left: auto; align-self: center; gap: 0; --bh: 2px; }
+/* 小さいパネル：日付の横の 5 色。ホバーで 1 本ずつ左へ伸びて、版の横まで届く */
+.meta .band { flex: 1; min-width: 16px; margin-left: 4px; align-self: center; align-items: flex-end; gap: 0; --bh: 2px; }
+.meta .band i { width: 16px; transition: width .35s cubic-bezier(.4, 0, .2, 1); }
+.poster:hover .meta .band i { width: 100%; transition-duration: .55s; }
+.poster:hover .meta .band i:nth-child(2) { transition-delay: .04s; } .poster:hover .meta .band i:nth-child(3) { transition-delay: .08s; }
+.poster:hover .meta .band i:nth-child(4) { transition-delay: .12s; } .poster:hover .meta .band i:nth-child(5) { transition-delay: .16s; }
+/* 大きいパネル：下の帯に光が 1 本ずつ流れる */
+.poster.feature > .band i { position: relative; overflow: hidden; }
+.poster.feature > .band i::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7) 50%, transparent); }
+.poster.feature:hover > .band i::after { animation: sheen 1.1s cubic-bezier(.4, 0, .2, 1) both; }
+.poster.feature:hover > .band i:nth-child(2)::after { animation-delay: .06s; } .poster.feature:hover > .band i:nth-child(3)::after { animation-delay: .12s; }
+.poster.feature:hover > .band i:nth-child(4)::after { animation-delay: .18s; } .poster.feature:hover > .band i:nth-child(5)::after { animation-delay: .24s; }
+@keyframes sheen { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .meta .band i { transition: none; } .poster.feature:hover > .band i::after { animation: none; } }
 /* 説明：左揃え。改行は文節で（Chrome は word-break: auto-phrase、ほかは JS の BudouX） */
 .poster .cap { align-self: stretch; margin: 12% 0 0; color: #4f4d48; font-size: 12.5px; line-height: 1.7; text-align: left; letter-spacing: .02em;
   word-break: auto-phrase; line-break: strict; overflow-wrap: anywhere; }
@@ -123,13 +137,6 @@ nav.top a.gh:hover { color: var(--ink); }
 .poster::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s; z-index: 2;
   background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .85), transparent 50%); mix-blend-mode: soft-light; }
 .poster:hover::before { opacity: 1; }
-/* ホバーで枠に線が一周引かれる（5 色のグラデーション）。離れると戻る */
-.edge { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: visible; }
-.edge rect { x: 1px; y: 1px; width: calc(100% - 2px); height: calc(100% - 2px); rx: calc(var(--radius) - 1px); ry: calc(var(--radius) - 1px);
-  fill: none; stroke: url(#edge-grad); stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 1;
-  transition: stroke-dashoffset .5s cubic-bezier(.4, 0, .2, 1); }
-.poster:hover .edge rect { stroke-dashoffset: 0; transition-duration: .9s; }
-@media (prefers-reduced-motion: reduce) { .edge rect { transition: none; } }
 .poster:hover { box-shadow: 0 2px 4px rgba(0, 0, 0, .05), 0 18px 40px rgba(0, 0, 0, .1); }
 
 /* 画像つき（大きいポスター） */

@@ -224,9 +224,6 @@ def search_key(p):
 BAND = '<div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>'
 
 
-EDGE = '<svg class="edge" aria-hidden="true"><rect pathLength="1"/></svg>'
-
-
 def meta(p, mark=""):
     """リリース日と版（mark：右端に置く小さな 5 色）"""
     date = f'<div><dt>Release</dt><dd>{e(p["date"])}</dd></div>' if p["date"] else ""
@@ -252,7 +249,6 @@ def poster_feature(c, p, released, no, wide=False):
           </div>
           {BAND}
           <span class="no">No. {no:03d}</span>
-          {EDGE}
         </article>"""
 
 
@@ -265,7 +261,6 @@ def poster(c, p, released, no):
           {meta(p, BAND)}
           {files_html(p, released)}
           <span class="no">No. {no:03d}</span>
-          {EDGE}
         </article>"""
 
 
@@ -325,9 +320,6 @@ def render(collections):
   </footer>
 </div>
 <canvas class="trail" aria-hidden="true"></canvas>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="edge-grad" x1="0" y1="0" x2="1" y2="1">
-  <stop offset="0" stop-color="#f6b51d"/><stop offset=".25" stop-color="#ef4b24"/><stop offset=".5" stop-color="#e3204a"/>
-  <stop offset=".75" stop-color="#b51c7d"/><stop offset="1" stop-color="#642d8f"/></linearGradient></defs></svg>
 <script>{js}</script>
 </body>
 </html>
