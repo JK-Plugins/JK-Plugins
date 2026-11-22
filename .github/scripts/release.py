@@ -245,6 +245,18 @@ def cmd_package_windows(args):
 # ---------------------------------------------------------------- macOS
 
 
+def find_rsrc(target, crate, triple):
+    """build.rs（pipl）が作る PiPL のリソース。ふつうは target/<triple>/release/<crate>.rsrc"""
+    expected = target / triple / "release" / f"{crate}.rsrc"
+    if expected.exists():
+        return expected
+    found = sorted(target.rglob(f"{crate}.rsrc"), key=lambda f: f.stat().st_mtime, reverse=True)
+    print(f"{expected} not found; candidates: {[str(f) for f in found]}")
+    if not found:
+        raise SystemExit(f"{crate}.rsrc not found under {target}")
+    return found[0]
+
+
 def build_bundle(p, target, out):
     """Intel + Apple Silicon のユニバーサルな .plugin を組み立てて ad-hoc 署名する"""
     triples = ["x86_64-apple-darwin", "aarch64-apple-darwin"]
@@ -263,7 +275,7 @@ def build_bundle(p, target, out):
         "-output",
         str(bundle / "Contents" / "MacOS" / name),
     )
-    shutil.copy2(target / triples[0] / "release" / f"{p['crate']}.rsrc", bundle / "Contents" / "Resources" / f"{name}.rsrc")
+    shutil.copy2(find_rsrc(target, p["crate"], triples[0]), bundle / "Contents" / "Resources" / f"{name}.rsrc")
     (bundle / "Contents" / "PkgInfo").write_text("eFKTFXTC", encoding="ascii")
     with open(bundle / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump(
