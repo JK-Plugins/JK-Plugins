@@ -7,7 +7,7 @@
 <meta name="description" content="JK Tone Gradient（After Effects プラグイン）をブラウザで試す">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Instrument+Serif:ital@0;1&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,8 +25,8 @@
       <div class="vline"><span class="ver">v{{VERSION}}</span><span class="tag">ブラウザで試す</span></div>
     </div>
     <div class="dl">
-      <a class="btn" href="{{AEX}}">{{ICON_WIN}}Windows<small>.aex</small></a>
-      <a class="btn" href="{{PLUGIN}}">{{ICON_MAC}}macOS<small>.plugin</small></a>
+      <a class="btn" href="{{AEX}}" title="Windows .aex">{{ICON_WIN}}<span>Windows</span>{{AEX_SIZE}}{{ICON_DL}}</a>
+      <a class="btn" href="{{PLUGIN}}" title="macOS .plugin">{{ICON_MAC}}<span>macOS</span>{{PLUGIN_SIZE}}{{ICON_DL}}</a>
     </div>
   </header>
 
@@ -105,6 +105,14 @@
         <div class="row"><span class="name">Mid Color</span><input type="color" data-p="mid_color" value="#ffffff"></div>
         <div class="row"><span class="name">Mid Amount</span><input type="range" data-p="mid_amount" min="0" max="100" step="1" value="0"><output></output></div>
         <div class="row"><span class="name">Mid Width</span><input type="range" data-p="mid_width" min="0" max="100" step="1" value="50"><output></output></div>
+      </div>
+
+      <div class="group ae">
+        <h2>After Effects へ</h2>
+        <p class="note2">いまの値をコピーして、Ae でこのエフェクトを入れたレイヤーを選び、貼り付け（Ctrl+V / ⌘V）。今の時間にキーフレームとして入ります。</p>
+        <label class="row"><span class="name">色もコピー</span><label class="sw"><input type="checkbox" id="aecolors"><span></span></label></label>
+        <button class="copy" id="aecopy">Ae 用にコピー</button>
+        <textarea id="aetext" readonly hidden aria-label="Ae に貼り付けるテキスト"></textarea>
       </div>
 
       <button class="ghost reset" id="reset">初期値に戻す</button>

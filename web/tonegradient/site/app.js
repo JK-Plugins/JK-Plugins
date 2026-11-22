@@ -66,6 +66,7 @@
     cx.drawImage(img, 0, 0, W, H);
     src = new Uint8ClampedArray(cx.getImageData(0, 0, W, H).data);
     usingImage = true;
+    var ac = document.getElementById("aecolors"); if (ac) ac.checked = true;
     var count = new Map();
     for (var i = 0; i < src.length; i += 4) {
       if (src[i + 3] < 255) continue;
@@ -250,6 +251,98 @@
     this.value = "";
   });
   document.getElementById("sample").addEventListener("click", useSample);
+
+
+  // ---- After Effects へコピー ----
+  // Ae のキーフレームデータ（キーフレームをコピーしたときのテキスト）の形で書く。
+  // 貼り付けると「エフェクト名 #何個目」の「パラメータ #番号」に、今の時間のキーフレームとして入る。
+  // 番号はプラグインのパラメータの並び（tonegradient/src/plugin.rs の Params と params_setup の順）。
+  // グループの始まり・終わりも 1 つずつ数える。並びを変えたらここも合わせる。
+  var AE_EFFECT = "JK Tone Gradient";
+  var AE = (function () {
+    var list = ["Output", "Width", "Stop at Lines", "Texture", "Texture Layer", "Texture Mode", "Amount", "Animate Seed",
+      "<Color Select", "Tolerance", "Alpha Threshold"];
+    for (var g = 0; g < 4; g++) {
+      list.push("<Colors");
+      for (var k = 0; k < 8; k++) {
+        var n = g * 8 + k + 1;
+        list.push("Use " + n, "Color " + n, "<Detail", "Tolerance " + n, "Spread " + n, "Grow " + n, ">");
+      }
+      list.push(">");
+    }
+    list.push(">", "<Gradient", "Offset", "Reverse Order", "Curve", "Curve Graph", "Curve Power", "Interpolation", ">",
+      "<Mid Color", "Mid Color", "Mid Amount", "Mid Width", ">",
+      "<Texture Settings", "Softness", "Texture Size", "Angle", "Texture Position", "Dot Shape", "Ellipse Aspect",
+      "Noise Detail", "Layer Channel", "Invert", "Seed", "Antialias", ">",
+      "<Roughness", "Rough Amount", "Rough Scale", ">", "Render");
+    var idx = {};
+    list.forEach(function (name, i) { if (name[0] !== "<" && name !== ">" && !(name in idx)) idx[name] = i + 1; });
+    // Mid Color はグループ名と同じ名前なので、グループの次の項目を指す
+    idx["Mid Color"] = list.indexOf("<Mid Color") + 2;
+    return idx;
+  })();
+
+  function val(name) {
+    var el = panel.querySelector('[data-p="' + name + '"]');
+    if (el.classList.contains("seg")) return +el.querySelector(".on").dataset.v;
+    if (el.type === "checkbox") return el.checked ? 1 : 0;
+    return +el.value;
+  }
+  function rgb(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
+
+  function aeText(withColors) {
+    var kind = val("tex_kind");
+    var v = [
+      ["Output", val("output") + 1], ["Width", val("width")], ["Stop at Lines", val("stop")], ["Texture", kind + 1], ["Texture Mode", val("tex_mode") + 1],
+      ["Amount", val("amount")], ["Offset", val("offset")], ["Reverse Order", val("reverse")], ["Curve", val("curve") + 1],
+      ["Curve Power", val("curve_power")], ["Interpolation", val("interp") + 1],
+      ["Mid Color", rgb(panel.querySelector('[data-p="mid_color"]').value)], ["Mid Amount", val("mid_amount")], ["Mid Width", val("mid_width")],
+      ["Softness", val("softness")],
+      // Bayer・Grain は Texture Size 8 で 1 粒 1px（ページの Dither Size × 8）
+      ["Texture Size", kind === 3 || kind === 4 ? val("dither_size") * 8 : val("cell")],
+      ["Angle", val("angle")], ["Dot Shape", val("dot_shape") + 1], ["Ellipse Aspect", val("aspect")],
+      ["Noise Detail", val("octaves")], ["Invert", val("invert")], ["Seed", val("seed")],
+      ["Rough Amount", val("roughness")], ["Rough Scale", val("rough_scale")]
+    ];
+    if (usingImage) v.push(["Tolerance", val("tolerance")]);
+    if (withColors) {
+      var on = colors.filter(function (c) { return c.on; });
+      for (var i = 0; i < Math.max(8, on.length) && i < 32; i++) {
+        v.push(["Use " + (i + 1), i < on.length ? 1 : 0]);
+        if (i < on.length) v.push(["Color " + (i + 1), on[i].rgb]);
+      }
+    }
+    var out = ["Adobe After Effects 8.0 Keyframe Data", "",
+      "\tUnits Per Second\t30", "\tSource Width\t" + W, "\tSource Height\t" + H,
+      "\tSource Pixel Aspect Ratio\t1", "\tComp Pixel Aspect Ratio\t1", ""];
+    v.forEach(function (p) {
+      out.push("Effects\t" + AE_EFFECT + " #1\t" + p[0] + " #" + AE[p[0]]);
+      if (Array.isArray(p[1])) {
+        out.push("\tFrame\talpha\tred\tgreen\tblue\t", "\t0\t255\t" + p[1].join("\t") + "\t");
+      } else {
+        out.push("\tFrame\t\t", "\t0\t" + (+p[1].toFixed(4)) + "\t");
+      }
+      out.push("");
+    });
+    out.push("", "End of Keyframe Data", "");
+    return out.join("\r\n");
+  }
+
+  var aeColors = document.getElementById("aecolors"), aeCopy = document.getElementById("aecopy"), aeArea = document.getElementById("aetext");
+  aeCopy.addEventListener("click", function () {
+    var text = aeText(aeColors.checked);
+    var done = function () {
+      aeCopy.textContent = "コピーしました ✓"; aeCopy.classList.add("done"); aeArea.hidden = true;
+      setTimeout(function () { aeCopy.textContent = "Ae 用にコピー"; aeCopy.classList.remove("done"); }, 1600);
+    };
+    var fail = function () {
+      // クリップボードに書けないとき：選んだ状態のテキストを出して、自分でコピーしてもらう
+      aeArea.hidden = false; aeArea.value = text; aeArea.focus(); aeArea.select();
+      aeCopy.textContent = "下のテキストをコピーしてください";
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fail);
+    else fail();
+  });
 
   // ---- 起動 ----
   useSample();

@@ -5,7 +5,9 @@
 - 載せるリポジトリは COLLECTIONS（JK-Plugins と fs-rs）
 - プラグインの一覧（名前・バージョン・説明・説明ページ）は各リポジトリの README の「プラグイン一覧」の表から読む
   （README-ja.md があればそれ、無ければ README.md。リリースの計画でバージョンが Cargo.toml と合っていることを確かめている）
-- ダウンロードのリンクは各リポジトリの最新のまとめリリース（gh release view）から作る。リリースがまだ無ければ「準備中」
+- ダウンロードのリンクとファイルサイズは各リポジトリの最新のまとめリリース（gh release view）から作る。リリースがまだ無ければ「準備中」
+- 画像の無いプラグインは詰めた一覧で並べる。上の検索欄で名前・説明から絞り込める
+- 見た目と動きは .github/scripts/site/ の style.css・main.js（index.html に埋め込む）
 - 画像はこのリポジトリのプラグインのフォルダーの docs/samples/00_overview.png があれば使う
 - web/<プラグインのフォルダー>/ があれば、そのプラグインをブラウザで試すページ（try/<フォルダー>/）も作る。
   web/<フォルダー>/site/ のファイルを置き、crate を wasm32-unknown-unknown でビルドした .wasm を添える
@@ -23,9 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SELF = "JK-Plugins/JK-Plugins"
 COLLECTIONS = [
-    {"repo": "JK-Plugins/JK-Plugins", "title": "JK-Plugins", "lead": "オリジナル"},
+    {"repo": "JK-Plugins/JK-Plugins", "title": "JK-Plugins", "lead": "オリジナル", "lead_en": "Originals."},
     {"repo": "JK-Plugins/fs-rs", "title": "fs-rs",
-     "lead": "F's Plugin（bryful 氏）の Rust 版"},
+     "lead": "F's Plugin（bryful 氏）の Rust 版", "lead_en": "F's Plugins by bryful, in Rust."},
 ]
 ROW = re.compile(
     r"^\|\s*\[(?P<name>[^\]]+)\]\((?P<dir>[^)]+)/README\.md\)\s*\|"
@@ -69,6 +71,7 @@ def plugins_of(repo):
             d["download"] = f"https://github.com/{repo}/releases/download/{d['archive_tag']}"
             d["image"] = None
             d["try"] = None
+            d["aex_size"] = d["zip_size"] = None
             d["date"] = release_date(repo, d["archive_tag"])
             out.append(d)
     if not out:
@@ -77,9 +80,17 @@ def plugins_of(repo):
     return out
 
 
+_DATES = {}
+
+
 def release_date(repo, tag):
-    r = gh("release", "view", tag, "--repo", repo, "--json", "publishedAt", "-q", ".publishedAt", check=False)
-    return r.stdout.strip()[:10] if r.returncode == 0 and r.stdout.strip() else None
+    """そのタグのリリースの公開日（リポジトリのリリース一覧を 1 回だけ読んで引く）"""
+    if repo not in _DATES:
+        r = gh("api", f"repos/{repo}/releases?per_page=100", "--paginate",
+               "-q", ".[] | [.tag_name, .published_at] | @tsv", check=False)
+        _DATES[repo] = dict(line.split("\t", 1) for line in r.stdout.splitlines() if "\t" in line) if r.returncode == 0 else {}
+    d = _DATES[repo].get(tag)
+    return d[:10] if d else None
 
 
 def latest_release(repo):
@@ -87,10 +98,10 @@ def latest_release(repo):
     if r.returncode != 0:
         return None
     rel = json.loads(r.stdout)
-    assets = {a["name"]: a["url"] for a in rel["assets"]}
+    assets = {a["name"]: (a["url"], a.get("size")) for a in rel["assets"]}
 
     def find(suffix):
-        return next((u for n, u in assets.items() if n.endswith(suffix)), None)
+        return next((v for n, v in assets.items() if n.endswith(suffix)), None)
 
     return {
         "tag": rel["tagName"],
@@ -100,120 +111,14 @@ def latest_release(repo):
         "win_setup": find("-windows-setup.exe"),
         "win_zip": find("-windows.zip"),
         "mac_pkg": find("-macos.pkg"),
+        # プラグインごとのファイル（<名前>.aex・<名前>.plugin.zip）のサイズ
+        "sizes": {n: v[1] for n, v in assets.items()},
     }
 
 
 def e(s):
     return html.escape(str(s), quote=True)
 
-
-CSS = """
-:root {
-  --bg: #fafafa; --surface: #ffffff; --text: #0f0f12; --muted: #6e6e78; --line: rgba(15, 15, 18, .08);
-  --accent: #e0457b; --accent2: #7c5cff; --accent-soft: rgba(224, 69, 123, .10);
-  --btn: #0f0f12; --btn-text: #ffffff; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
-  --glow1: rgba(224, 69, 123, .20); --glow2: rgba(124, 92, 255, .18);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0b0b0e; --surface: #141418; --text: #f4f4f6; --muted: #9b9ba6; --line: rgba(255, 255, 255, .08);
-    --accent: #ff6b9c; --accent2: #9b85ff; --accent-soft: rgba(255, 107, 156, .14);
-    --btn: #f4f4f6; --btn-text: #0b0b0e; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
-    --glow1: rgba(255, 107, 156, .16); --glow2: rgba(155, 133, 255, .14);
-  }
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0; color: var(--text); min-height: 100vh;
-  font: 15px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
-  background:
-    radial-gradient(900px 420px at 12% -8%, var(--glow1), transparent 70%),
-    radial-gradient(800px 380px at 92% -4%, var(--glow2), transparent 70%),
-    var(--bg);
-  background-repeat: no-repeat;
-}
-a { color: inherit; text-decoration: none; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
-nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
-.logo { font-weight: 800; letter-spacing: -0.02em; }
-nav a.gh { color: var(--muted); font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
-nav a.gh:hover { color: var(--text); }
-.hero { padding: 48px 0 8px; text-align: center; }
-.hero h1 {
-  margin: 0; font-size: clamp(40px, 8vw, 72px); line-height: 1; letter-spacing: -0.04em; font-weight: 800;
-  background: linear-gradient(100deg, var(--text) 30%, var(--accent) 70%, var(--accent2));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.hero p { margin: 14px 0 0; color: var(--muted); font-size: 17px; }
-.col { margin: 56px 0 72px; }
-.col-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px;
-  padding: 36px 20px 32px; border-radius: 28px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
-.col-head h2 { margin: 0; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
-.meta { color: var(--muted); font-size: 14px; margin-top: 6px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; justify-content: center; }
-.chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
-  color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.chip b { color: var(--text); font-weight: 600; margin-left: 6px; }
-.get { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.installers { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-.big { display: inline-flex; align-items: center; gap: 12px; padding: 14px 28px 14px 22px; border-radius: 18px;
-  color: #fff; background: linear-gradient(120deg, var(--accent), var(--accent2)); text-align: left;
-  box-shadow: 0 10px 30px var(--glow1); transition: transform .15s, box-shadow .15s; min-width: 220px; }
-.big:hover { transform: translateY(-2px); box-shadow: 0 14px 36px var(--glow1); }
-.big svg { width: 26px; height: 26px; flex: none; }
-.big b { display: block; font-size: 18px; line-height: 1.2; }
-.big small { display: block; font-size: 12px; opacity: .85; }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; border-radius: 999px;
-  background: var(--btn); color: var(--btn-text); font-weight: 600; font-size: 14px; white-space: nowrap;
-  transition: transform .15s, opacity .15s;
-}
-.btn svg { width: 15px; height: 15px; flex: none; }
-.btn:hover { transform: translateY(-1px); opacity: .9; }
-.more { color: var(--muted); font-size: 13px; padding: 0 6px; }
-.more:hover { color: var(--text); }
-.soon { color: var(--muted); font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
-  border: 1px dashed var(--line); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 340px)); justify-content: center; gap: 18px; margin-top: 24px; }
-.tile {
-  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);
-  border-radius: 20px; overflow: hidden; box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
-}
-.tile:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 0 0 1px var(--accent-soft); }
-.thumb { display: block; aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); }
-.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s; }
-.tile:hover .thumb img { transform: scale(1.03); }
-.body { padding: 18px 18px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.body h3 { margin: 0; font-size: 17px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ver { font-size: 12px; padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
-  font-weight: 600; font-variant-numeric: tabular-nums; }
-.vline { display: flex; align-items: center; gap: 8px; margin-top: -2px; }
-.date { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.body p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
-.files { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.files .btn { padding: 9px 12px; font-size: 13px; background: transparent; color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line); }
-.files .btn small { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; }
-.files .btn:hover { box-shadow: inset 0 0 0 1px var(--text); opacity: 1; }
-.files .soon { grid-column: 1 / -1; text-align: center; }
-.doc { font-size: 13px; color: var(--muted); }
-.doc:hover { color: var(--text); }
-.try { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 10px 12px;
-  border-radius: 999px; font-weight: 600; font-size: 14px; color: #fff;
-  background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 6px 18px var(--glow1); transition: transform .15s; }
-.try:hover { transform: translateY(-1px); }
-.try svg { width: 14px; height: 14px; }
-footer { margin-top: 24px; padding: 28px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px;
-  display: flex; gap: 20px; flex-wrap: wrap; }
-footer a:hover { color: var(--text); }
-@media (max-width: 640px) {
-  .hero { padding-top: 32px; }
-  .col { margin: 40px 0 56px; }
-  .installers { width: 100%; flex-direction: column; }
-  .big { justify-content: center; }
-}
-"""
 
 ICON_WIN = ('<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
             '<path d="M3 5.5 10.5 4.5v7H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>')
@@ -228,62 +133,162 @@ ICON_GH = ('<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" 
            '-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27'
            '.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 '
            '3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>')
+ICON_DL = ('<svg class="dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" '
+           'stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>')
+
+
+def fmt_size(n):
+    """バイト数を 180 KB・4.5 MB のように"""
+    if not n:
+        return ""
+    if n < 1024 * 1024:
+        return f"{round(n / 1024)} KB"
+    return f"{n / 1024 / 1024:.1f} MB"
+
+
+def size_tag(n):
+    return f'<span class="size">{fmt_size(n)}</span>' if n else ""
+
+
+ICON_SEARCH = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+               'aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>')
+
+ASSETS = Path(__file__).resolve().parent / "site"
+FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900"
+         "&family=Instrument+Serif:ital@0;1&family=Noto+Sans+JP:wght@400;700&display=swap")
+
+
+def _mark():
+    """マーク：7×7 のドットのきらきら"""
+    rows = ["...X...", "...X...", "..XXX..", "XXX.XXX", "..XXX..", "...X...", "...X..."]
+    rects = "".join(f'<rect x="{x}" y="{y}" width="1" height="1"/>'
+                    for y, r in enumerate(rows) for x, ch in enumerate(r) if ch == "X")
+    return f'<span class="mark"><svg viewBox="0 0 7 7" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true">{rects}</svg></span>'
+
+
+MARK = _mark()
+
+
+def short_name(name):
+    """JK Alpha Fix Fs → Alpha Fix（ポスターの一言にする）"""
+    parts = name.split(" ")
+    if len(parts) > 1 and parts[0] == "JK":
+        parts = parts[1:]
+    if len(parts) > 1 and parts[-1] == "Fs":
+        parts = parts[:-1]
+    return " ".join(parts)
+
+
+def files_html(p, released):
+    """個別ファイルのボタン（Windows・macOS で同じ形）"""
+    if not released:
+        return '<div class="files"><span class="soon">準備中</span></div>'
+
+    def b(ext, size, icon, os_name):
+        f = f'{p["stem"]}{ext}'
+        sz = fmt_size(size)
+        return (f'<a class="fbtn" href="{e(p["download"])}/{e(f)}" title="{e(os_name)}：{e(f)}" data-cur="↓ {e(sz or os_name)}">'
+                f'{icon}<span class="os">{os_name}</span><span class="size">{sz}</span>{ICON_DL}</a>')
+
+    return ('<div class="files">' + b(".aex", p["aex_size"], ICON_WIN, "Windows")
+            + b(".plugin.zip", p["zip_size"], ICON_MAC, "macOS") + '</div>')
 
 
 def collection_head(c):
     rel = c["release"]
     if rel is None:
-        chips, get = "", '<span class="soon">準備中</span>'
+        get = '<span class="soon">準備中</span>'
     else:
-        chips = (f'<div class="chips"><span class="chip">リリース<b>{e(rel["version"])}</b></span>'
-                 f'<span class="chip">公開<b>{e(rel["date"])}</b></span></div>')
-        win = rel["win_setup"] or rel["url"]
-        mac = rel["mac_pkg"] or rel["url"]
-        get = (f'<div class="installers">'
-               f'<a class="big" href="{e(win)}">{ICON_WIN}<span><b>Windows</b><small>インストーラー .exe</small></span></a>'
-               f'<a class="big" href="{e(mac)}">{ICON_MAC}<span><b>macOS</b><small>インストーラー .pkg</small></span></a>'
-               f'</div><a class="more" href="{e(rel["url"])}" title="zip・過去の版">他のファイル</a>')
-    return f"""<div class="col-head">
-        <div><h2>{e(c["title"])}</h2><div class="meta">{e(c["lead"])}</div>{chips}</div>
+        def big(asset, icon, os_name, ext):
+            if asset is None:
+                return f'<a class="big" href="{e(rel["url"])}" data-cur="Release">{icon}<span>{os_name}</span><small></small></a>'
+            url, size = asset
+            return (f'<a class="big" href="{e(url)}" title="すべてのプラグインのインストーラー {ext}">'
+                    f'{icon}<span>{os_name}</span><small>{ext} · {fmt_size(size)}</small>{ICON_DL}</a>')
+
+        # まとめて入れるボタンだと分かるように、上に小さく「まとめてインストール」
+        get = ('<div class="get-label">まとめてインストール</div>'
+               '<div class="installers">' + big(rel["win_setup"], ICON_WIN, "Windows", ".exe")
+               + big(rel["mac_pkg"], ICON_MAC, "macOS", ".pkg") + '</div>'
+               + f'<a class="more" href="{e(rel["url"])}">v{e(rel["version"])} ・ zip・過去の版 →</a>')
+    return f"""<header class="col-head">
+        <div><h2>{e(c["title"])}<span class="p">({len(c["plugins"])})</span></h2><p class="lead">{e(c["lead_en"])}</p></div>
         <div class="get">{get}</div>
-      </div>"""
+      </header>"""
 
 
-def plugin_card(p, released):
-    thumb = (
-        f'<a class="thumb" href="{e(p["try"] or p["readme"])}"><img src="{e(p["image"])}" alt="" loading="lazy"></a>'
-        if p["image"]
-        else ""
-    )
-    date = f'<span class="date">{e(p["date"])}</span>' if p["date"] else ""
-    if released:
-        files = f"""<div class="files">
-              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.aex" title="{e(p["stem"])}.aex">{ICON_WIN}Windows<small>.aex</small></a>
-              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.plugin.zip" title="{e(p["stem"])}.plugin.zip">{ICON_MAC}macOS<small>.plugin</small></a>
-            </div>"""
-    else:
-        files = '<div class="files"><span class="soon">準備中</span></div>'
-    try_btn = (f'<a class="try" href="{e(p["try"])}">{ICON_PLAY}ブラウザで試す</a>' if p["try"] else "")
+def search_key(p):
+    return " ".join([p["name"], p["desc"], p["dir"]])
+
+
+BAND = '<div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>'
+
+
+def meta(p, mark=""):
+    """リリース日と版（mark：右端に置く小さな 5 色）"""
+    date = f'<div><dt>Release</dt><dd>{e(p["date"])}</dd></div>' if p["date"] else ""
+    return f'<dl class="meta">{date}<div><dt class="sr">Version</dt><dd>v{e(p["version"])}</dd></div>{mark}</dl>'
+
+
+def poster_feature(c, p, released, no, wide=False):
+    """画像のあるプラグイン：2×2 の大きいポスター"""
+    href = p["try"] or p["readme"]
+    sub = "try it in your browser" if p["try"] else "for After Effects"
+    img = (f'<figure><a href="{e(href)}" data-cur="{"Try" if p["try"] else "README"}">'
+           f'<img src="{e(p["image"])}" alt="{e(p["name"])} の作例" loading="lazy"></a></figure>' if p["image"] else "")
+    try_btn = f'<a class="try" href="{e(p["try"])}" data-cur="Try">ブラウザで試す {ICON_PLAY}</a>' if p["try"] else ""
     return f"""
-        <article class="tile">
-          {thumb}
-          <div class="body">
-            <h3><a href="{e(p["try"] or p["readme"])}">{e(p["name"])}</a></h3>
-            <div class="vline"><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a>{date}</div>
-            <p>{e(p["desc"])}</p>
-            <a class="doc" href="{e(p["readme"])}">説明・パラメータ →</a>
-            {try_btn}{files}
+        <article class="poster feature{" wide" if wide else ""} grain rv" data-q="{e(search_key(p))}">
+          <h3><a href="{e(p["readme"])}" data-cur="README"><span class="caps">{e(short_name(p["name"]))}.</span></a><span class="it">{sub}</span></h3>
+          {img}
+          <div class="side">
+          <p class="cap">{e(p["desc"])}</p>
+          {meta(p)}
+          {try_btn}
+          {files_html(p, released)}
           </div>
+          {BAND}
+          <span class="no">No. {no:03d}</span>
         </article>"""
 
 
+def poster(c, p, released, no):
+    """画像の無いプラグイン：文字だけのポスター"""
+    return f"""
+        <article class="poster grain rv" data-q="{e(search_key(p))}">
+          <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{e(short_name(p["name"]))}.</a></h3>
+          <p class="cap">{e(p["desc"])}</p>
+          {meta(p, BAND)}
+          {files_html(p, released)}
+          <span class="no">No. {no:03d}</span>
+        </article>"""
+
+
+def collection(c, start):
+    released = c["release"] is not None
+    body, no = "", start
+    for p in sorted(c["plugins"], key=lambda p: not (p["image"] or p["try"])):
+        no += 1
+        if p["image"] or p["try"]:
+            # 1 本だけのコレクションは、横長（画像が左・文字が右）で全部の列を使う
+            body += poster_feature(c, p, released, no, wide=len(c["plugins"]) == 1)
+        else:
+            body += poster(c, p, released, no)
+    return (f'\n    <section class="col" id="{e(c["id"])}">\n      {collection_head(c)}'
+            f'\n      <div class="posters">{body}\n      </div>\n    </section>')
+
+
 def render(collections):
-    cols = "".join(
-        f'\n    <section class="col">\n      {collection_head(c)}\n      <div class="grid">'
-        + "".join(plugin_card(p, c["release"] is not None) for p in c["plugins"])
-        + "\n      </div>\n    </section>"
-        for c in collections
-    )
+    css = (ASSETS / "style.css").read_text(encoding="utf-8")
+    js = (ASSETS / "main.js").read_text(encoding="utf-8")
+    for c in collections:
+        c["id"] = c["title"].lower()
+    total = sum(len(c["plugins"]) for c in collections)
+    cols, start = "", 0
+    for c in collections:
+        cols += collection(c, start)
+        start += len(c["plugins"])
+    jump = "".join(f'<a href="#{e(c["id"])}">{e(c["title"])}<span>({len(c["plugins"])})</span></a>' for c in collections)
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -293,18 +298,29 @@ def render(collections):
 <meta name="description" content="After Effects 用プラグイン JK-Plugins・fs-rs のダウンロード">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>{CSS}</style>
+<link href="{FONTS}" rel="stylesheet">
+<style>{css}</style>
 </head>
 <body>
 <div class="wrap">
-  <nav><span></span><a class="gh" href="https://github.com/{SELF}">{ICON_GH}GitHub</a></nav>
-  <header class="hero"><h1>JK-Plugins</h1><p>After Effects プラグイン</p></header>
+  <nav class="top"><span class="logo">{MARK}JK-Plugins</span><a class="gh" href="https://github.com/{SELF}">{ICON_GH}GitHub</a></nav>
+  <header class="hero grain">
+    <div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <h1><span class="b">Plugins</span><span class="i">for After Effects<span class="p">({total})</span></span></h1>
+  </header>
+  <div class="bar"><div class="bar-in">
+    <label class="search">{ICON_SEARCH}<input id="q" type="search" placeholder="プラグインを探す（名前・説明）" autocomplete="off" aria-label="プラグインを探す"><span class="count" id="count">({total})</span></label>
+    <div class="jump">{jump}</div>
+  </div></div>
 {cols}
+  <p class="empty" id="empty" hidden>Nothing here.<small>見つかりませんでした</small></p>
   <footer>
+    <span class="logo">{MARK}JK-Plugins</span>
     {"".join(f'<a href="https://github.com/{c["repo"]}">GitHub: {e(c["title"])}</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告</a>
   </footer>
 </div>
+<canvas class="trail" aria-hidden="true"></canvas>
+<script>{js}</script>
 </body>
 </html>
 """
@@ -346,6 +362,9 @@ def build_try_page(p, out):
         "{{PLUGIN}}": e(f'{p["download"]}/{p["stem"]}.plugin.zip'),
         "{{ICON_WIN}}": ICON_WIN,
         "{{ICON_MAC}}": ICON_MAC,
+        "{{ICON_DL}}": ICON_DL,
+        "{{AEX_SIZE}}": size_tag(p["aex_size"]),
+        "{{PLUGIN_SIZE}}": size_tag(p["zip_size"]),
     }.items():
         html_text = html_text.replace(k, v)
     page.write_text(html_text, encoding="utf-8")
@@ -367,6 +386,10 @@ def main():
         if not c["plugins"]:
             continue
         c["release"] = latest_release(c["repo"])
+        if c["release"]:
+            for p in c["plugins"]:
+                p["aex_size"] = c["release"]["sizes"].get(f'{p["stem"]}.aex')
+                p["zip_size"] = c["release"]["sizes"].get(f'{p["stem"]}.plugin.zip')
         if c["repo"] == SELF:
             for p in c["plugins"]:
                 img = ROOT / p["dir"] / "docs" / "samples" / "00_overview.png"
