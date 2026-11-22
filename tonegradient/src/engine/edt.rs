@@ -82,7 +82,7 @@ pub fn distance_sq_by(
     {
         let threads = thread_count(w);
         let cols_per = w.div_ceil(threads);
-        std::thread::scope(|sc| {
+        super::par::scope(|sc| {
             for (ci, dchunk) in col_d.chunks_mut(cols_per * h).enumerate() {
                 sc.spawn(move || {
                     let mut f = vec![0f64; h];
@@ -107,7 +107,7 @@ pub fn distance_sq_by(
         let threads = thread_count(h);
         let rows_per = h.div_ceil(threads);
         let col_d = &col_d;
-        std::thread::scope(|sc| {
+        super::par::scope(|sc| {
             for (ri, dchunk) in out_d2.chunks_mut(rows_per * w).enumerate() {
                 sc.spawn(move || {
                     let mut f = vec![0f64; w];
@@ -157,7 +157,7 @@ pub fn nearest_seed(w: usize, h: usize, seed: &[bool]) -> (Vec<u32>, Vec<f32>) {
     {
         let threads = thread_count(w);
         let cols_per = (w + threads - 1) / threads;
-        std::thread::scope(|sc| {
+        super::par::scope(|sc| {
             for (ci, (dchunk, ychunk)) in col_d
                 .chunks_mut(cols_per * h)
                 .zip(col_y.chunks_mut(cols_per * h))
@@ -190,7 +190,7 @@ pub fn nearest_seed(w: usize, h: usize, seed: &[bool]) -> (Vec<u32>, Vec<f32>) {
         let rows_per = (h + threads - 1) / threads;
         let col_d = &col_d;
         let col_y = &col_y;
-        std::thread::scope(|sc| {
+        super::par::scope(|sc| {
             for (ri, (ichunk, dchunk)) in out_idx
                 .chunks_mut(rows_per * w)
                 .zip(out_d2.chunks_mut(rows_per * w))

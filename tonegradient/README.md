@@ -8,6 +8,8 @@
 
 ![概要](docs/samples/00_overview.png)
 
+**ブラウザで試す：https://jk-plugins.github.io/JK-Plugins/try/tonegradient/**
+
 ## 仕組み
 
 1. **ラベル付け**：各ピクセルがグループ内の何番目の色か（グループ外の色や Alpha Threshold 未満のピクセルは対象外）
@@ -76,7 +78,7 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 
 | 名前 | 内容 |
 |---|---|
-| Mid Color / Mid Amount | 色が混ざっているところに入れる3つ目の色と、その量（初期値 0% = なし）（2色の境界の真ん中で最大）。上から重ねるのではなく、グラデーションの途中の色として扱うので、テクスチャ・Softness も同じようにかかる |
+| Mid Color / Mid Amount | 色が混ざっているところに入れる3つ目の色と、その量（初期値 0% = なし）（2色の境界の真ん中で最大）。上から重ねるのではなく、グラデーションの途中の色として扱う。**Texture が Smooth か、Texture Mode が Map のときだけ使う**（Threshold で網点などの2値に分けるときは中間の色にならないので使わず、グレーアウトする） |
 | Mid Width | 中間色の帯の太さ。100% で混ざっているところ全体、小さいほど境界の真ん中に寄る（初期値 50%） |
 
 ![Mid Color](docs/samples/07_mid_color.png)

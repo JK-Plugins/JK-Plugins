@@ -17,6 +17,9 @@ on:
       - .github/scripts/site.py
       - .github/workflows/pages.yml
       - "*/docs/samples/00_overview.png"
+      # ブラウザで試すページ（エンジンを WebAssembly にしたもの）
+      - "web/**"
+      - "*/src/engine/**"
 
 permissions:
   contents: read
@@ -32,6 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Rust (WebAssembly)
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: web/tonegradient
       - name: Build
         env:
           GH_TOKEN: ${{ github.token }}

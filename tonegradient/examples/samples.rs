@@ -292,8 +292,12 @@ fn cases() -> Vec<Case> {
     ));
     let mut c = case(
         "07_mid_color",
-        "Dot / Mid 60%",
-        mid(0.6, 0.5, MidPosition::Core),
+        "Dot (Map) / Mid 60%",
+        // Mid Color は Map（か Smooth）のときだけ使う
+        Settings {
+            texture_mode: TextureMode::Map,
+            ..mid(0.6, 0.5, MidPosition::Core)
+        },
         dot(),
     );
     c.zoom = Some((120, 60, 120, 120));
