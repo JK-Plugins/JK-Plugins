@@ -9,7 +9,8 @@
 //!    （2色なら「t < 上側の色の重み」で上側の色。3色以上では網点が入れ子になる）
 
 use super::curve::CurveLut;
-use super::edt::distance_sq_by;
+use super::edt::{distance_sq_by, distance_sq_constrained};
+use super::spectral::{self, Pigment};
 use super::texture::{fbm, Texture, TextureKind};
 
 /// 1ピクセルが混ぜる「近くの他の色」の数の上限（Settings::max_neighbors で更に絞れる）
@@ -61,6 +62,8 @@ pub enum Interpolation {
     Linear,
     /// Oklab（人の見え方に近い色空間）で混ぜる
     Perceptual,
+    /// 絵の具のように混ぜる（Kubelka–Munk、spectral.rs）。黄と青で緑になる
+    Pigment,
 }
 
 fn srgb_to_linear(v: f32) -> f32 {
@@ -87,7 +90,8 @@ impl Interpolation {
     /// RGB（sRGB の値）を混ぜるための色空間に移す
     pub fn encode(self, rgb: [f32; 3]) -> [f32; 3] {
         match self {
-            Interpolation::Classic => rgb,
+            // Pigment は別の計算（spectral::mix）で混ぜるので、色はそのまま
+            Interpolation::Classic | Interpolation::Pigment => rgb,
             Interpolation::Linear => rgb.map(srgb_to_linear),
             Interpolation::Perceptual => {
                 let [r, g, b] = rgb.map(srgb_to_linear);
@@ -107,7 +111,7 @@ impl Interpolation {
     /// `encode` の逆（混ぜた結果を RGB に戻す）
     pub fn decode(self, v: [f32; 3]) -> [f32; 3] {
         match self {
-            Interpolation::Classic => v,
+            Interpolation::Classic | Interpolation::Pigment => v,
             Interpolation::Linear => v.map(linear_to_srgb),
             Interpolation::Perceptual => {
                 let [ll, a, b] = v;
@@ -194,6 +198,9 @@ pub struct Settings {
     pub mid_position: MidPosition,
     /// 色の混ぜ方
     pub interpolation: Interpolation,
+    /// 線（グループの色以外の画素）や透明なところをまたいで混ぜない。
+    /// 距離をグループの色の画素の中だけを伝って測る
+    pub stop_at_lines: bool,
     pub output: OutputMode,
     /// 描画座標の原点（テクスチャが領域の切り出しで動かないようにする）
     pub origin: (i32, i32),
@@ -224,6 +231,7 @@ impl Default for Settings {
             mid_width: 0.5,
             mid_position: MidPosition::Core,
             interpolation: Interpolation::Classic,
+            stop_at_lines: false,
             output: OutputMode::Result,
             origin: (0, 0),
         }
@@ -451,6 +459,30 @@ impl Prepared {
     }
 
     #[inline]
+    /// GPU の near の形（1画素 8 語：数・ラベル0..2、ラベル3..5、距離6つ）に詰める（edt.wgsl の merge と同じ）
+    #[cfg(any(windows, target_os = "macos"))]
+    pub(crate) fn gpu_near_words(&self) -> Vec<u32> {
+        let n = self.w * self.h;
+        let mut out = vec![0u32; n * 8];
+        if self.labels.is_empty() {
+            return out;
+        }
+        for i in 0..n {
+            let Some(nr) = self.near_at(i) else {
+                continue;
+            };
+            let o = &mut out[i * 8..i * 8 + 8];
+            let cnt = nr.n as usize;
+            o[0] = cnt as u32;
+            for j in 0..cnt {
+                let b = j + 1;
+                o[b / 4] |= (nr.label[j] as u32) << ((b % 4) * 8);
+                o[2 + j] = nr.dist[j].to_bits();
+            }
+        }
+        out
+    }
+
     fn near_at(&self, i: usize) -> Option<&Near> {
         if self.near_idx.is_empty() {
             return None;
@@ -555,6 +587,7 @@ pub fn prepare_key_with(w: usize, h: usize, s: &Settings, pixels: u64) -> u64 {
     k.add_f32(s.alpha_threshold);
     k.add_f32(reach(s));
     k.add(s.max_neighbors.clamp(1, MAX_NEIGHBORS) as u64);
+    k.add(s.stop_at_lines as u64);
     k.add(pixels);
     k.0
 }
@@ -608,63 +641,102 @@ pub fn prepare(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Prepared {
     let rows_per = h.div_ceil(threads);
     let mut near_idx = vec![NO_NEAR; n];
     let mut chunk_near: Vec<Vec<Near>> = vec![Vec::new(); h.div_ceil(rows_per)];
-    for k in 0..nc {
-        if !present[k] {
-            continue;
-        }
+    // 色ごとの距離を求める範囲（領域の外接矩形を reach だけ広げたもの）
+    let rect = |k: usize| {
         let (x0, y0, x1, y1) = bbox[k];
         let x0 = (x0 as i64 - reach_i).max(0) as usize;
         let y0 = (y0 as i64 - reach_i).max(0) as usize;
         let x1 = ((x1 as i64 + reach_i) as usize).min(w - 1);
         let y1 = ((y1 as i64 + reach_i) as usize).min(h - 1);
-        let (bw, bh) = (x1 - x0 + 1, y1 - y0 + 1);
+        (x0, y0, x1, y1, x1 - x0 + 1, y1 - y0 + 1)
+    };
+    // 色 k の領域までの二乗距離（範囲の中）
+    let dist = |k: usize| -> Vec<f32> {
+        let (x0, y0, _, _, bw, bh) = rect(k);
+        let labels = &labels;
+        let kk = k as u8;
         // シード（この色の画素）はラベルを直接読む（別の配列を作らない）
-        let d2 = {
-            let labels = &labels;
-            let kk = k as u8;
-            distance_sq_by(bw, bh, move |x, y| labels[(y + y0) * w + x + x0] == kk)
-        };
-        let (d2, labels) = (&d2, &labels);
-        super::par::scope(|sc| {
-            for (ci, (idx_chunk, near)) in near_idx
-                .chunks_mut(rows_per * w)
-                .zip(chunk_near.iter_mut())
-                .enumerate()
-            {
-                let r0 = ci * rows_per;
-                let r1 = (r0 + rows_per).min(h);
-                // この色の範囲と重なる行だけ
-                let ya = r0.max(y0);
-                let yb = r1.min(y1 + 1);
-                if ya >= yb {
-                    continue;
-                }
-                sc.spawn(move || {
-                    for y in ya..yb {
-                        for x in x0..=x1 {
-                            let dd = d2[(y - y0) * bw + (x - x0)];
-                            if dd > reach2 || dd == 0.0 {
-                                continue;
-                            }
-                            let i = y * w + x;
-                            if labels[i] == NONE {
-                                continue;
-                            }
-                            let li = i - r0 * w;
-                            let j = match idx_chunk[li] {
-                                NO_NEAR => {
-                                    idx_chunk[li] = near.len() as u32;
-                                    near.push(Near::EMPTY);
-                                    near.len() - 1
-                                }
-                                j => j as usize,
-                            };
-                            near[j].insert(k as u8, dd.sqrt(), limit);
-                        }
-                    }
-                });
-            }
+        let d2 = distance_sq_by(bw, bh, move |x, y| labels[(y + y0) * w + x + x0] == kk);
+        if !s.stop_at_lines {
+            return d2;
+        }
+        // 届く範囲に壁（グループ外・透明）が無ければ、普通の距離と同じ
+        let wall = (0..bh).any(|y| {
+            (0..bw).any(|x| labels[(y + y0) * w + x + x0] == NONE && d2[y * bw + x] <= reach2)
         });
+        if !wall {
+            return d2;
+        }
+        // 壁を越えない距離。直線距離で届かないところは道にもしない
+        distance_sq_constrained(
+            bw,
+            bh,
+            |x, y| labels[(y + y0) * w + x + x0] == kk,
+            |x, y| labels[(y + y0) * w + x + x0] != NONE && d2[y * bw + x] <= reach2,
+        )
+    };
+    let dist = &dist;
+    let ks: Vec<usize> = (0..nc).filter(|&k| present[k]).collect();
+    // 壁を越えない距離は何色かを同時に求める（1色の中も帯に分けて並列にするので少なめに。
+    // 作業用のメモリは同時に求める色の数だけ）
+    let batch = if s.stop_at_lines {
+        worker_threads(ks.len()).min(4)
+    } else {
+        1
+    };
+    for group in ks.chunks(batch) {
+        let ds: Vec<Vec<f32>> = if group.len() == 1 {
+            vec![dist(group[0])]
+        } else {
+            super::par::scope(|sc| {
+                let hs: Vec<_> = group.iter().map(|&k| sc.spawn(move || dist(k))).collect();
+                hs.into_iter().map(|h| h.join().unwrap()).collect()
+            })
+        };
+        for (&k, d2) in group.iter().zip(ds) {
+            let (x0, y0, x1, y1, bw, _) = rect(k);
+            let (d2, labels) = (&d2, &labels);
+            super::par::scope(|sc| {
+                for (ci, (idx_chunk, near)) in near_idx
+                    .chunks_mut(rows_per * w)
+                    .zip(chunk_near.iter_mut())
+                    .enumerate()
+                {
+                    let r0 = ci * rows_per;
+                    let r1 = (r0 + rows_per).min(h);
+                    // この色の範囲と重なる行だけ
+                    let ya = r0.max(y0);
+                    let yb = r1.min(y1 + 1);
+                    if ya >= yb {
+                        continue;
+                    }
+                    sc.spawn(move || {
+                        for y in ya..yb {
+                            for x in x0..=x1 {
+                                let dd = d2[(y - y0) * bw + (x - x0)];
+                                if dd > reach2 || dd == 0.0 {
+                                    continue;
+                                }
+                                let i = y * w + x;
+                                if labels[i] == NONE {
+                                    continue;
+                                }
+                                let li = i - r0 * w;
+                                let j = match idx_chunk[li] {
+                                    NO_NEAR => {
+                                        idx_chunk[li] = near.len() as u32;
+                                        near.push(Near::EMPTY);
+                                        near.len() - 1
+                                    }
+                                    j => j as usize,
+                                };
+                                near[j].insert(k as u8, dd.sqrt(), limit);
+                            }
+                        }
+                    });
+                }
+            });
+        }
     }
     p.labels = labels;
     p.near_idx = near_idx;
@@ -708,6 +780,18 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
     let mixed: Vec<[f32; 3]> = s.colors.iter().map(|c| interp.encode(c.rgb)).collect();
     let mixed = &mixed;
     let mid_mixed = interp.encode(s.mid_color);
+    // Pigment：色ごとの K/S などを前もって求めておく（最後が中間色）
+    let pigments: Vec<Pigment> = if interp == Interpolation::Pigment {
+        s.colors
+            .iter()
+            .map(|c| c.rgb)
+            .chain(std::iter::once(s.mid_color))
+            .map(Pigment::new)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let pigments = &pigments;
 
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -929,6 +1013,14 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
 
                             // 自分の色のままなら入力をそのまま残す
                             if frac[0] >= 1.0 - 1e-6 {
+                                continue;
+                            }
+                            if !pigments.is_empty() {
+                                let c = spectral::mix((0..me).map(|j| {
+                                    let k = if j == m { nc } else { cl[j] as usize };
+                                    (pigments[k], frac[j])
+                                }));
+                                changed.push((i as u32, [c[0], c[1], c[2], src[i][3]]));
                                 continue;
                             }
                             let mut c = [0f32; 3];
@@ -1276,6 +1368,58 @@ mod tests {
     }
 
     /// prepare を使い回して shade だけやり直しても、毎回 process した結果と同じ
+    /// 左が赤、右が青。x = w/2 に1px の黒い線（`gap` なら上の数行は線なし）。`transparent` なら線ではなく透明
+    fn split_by_line(w: usize, h: usize, gap: usize, transparent: bool) -> Vec<[f32; 4]> {
+        (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                if x == w / 2 && y >= gap {
+                    if transparent {
+                        [0.0, 0.0, 0.0, 0.0]
+                    } else {
+                        [0.0, 0.0, 0.0, 1.0]
+                    }
+                } else if x < w / 2 {
+                    [1.0, 0.0, 0.0, 1.0]
+                } else {
+                    [0.0, 0.0, 1.0, 1.0]
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stop_at_lines() {
+        let (w, h) = (40, 30);
+        let tex = Texture::new(TextureParams::default(), None);
+        let s = |stop| Settings {
+            colors: rb(),
+            width: 16.0,
+            stop_at_lines: stop,
+            ..Default::default()
+        };
+        for transparent in [false, true] {
+            let src = split_by_line(w, h, 0, transparent);
+            // 止めないときは線をまたいで混ざる
+            assert!(!process(w, h, &src, &s(false), &tex).changed.is_empty());
+            // 止めると何も変わらない
+            let out = process(w, h, &src, &s(true), &tex);
+            assert!(
+                out.changed.is_empty(),
+                "transparent={transparent}: {} changed",
+                out.changed.len()
+            );
+        }
+        // 線にすき間があれば、そこから回り込んで混ざる（すき間の近くだけ）
+        let src = split_by_line(w, h, 3, false);
+        let d = process(w, h, &src, &s(true), &tex).to_dense(&src);
+        assert!(d.changed[w / 2 - 1], "すき間の横が混ざっていない");
+        assert!(
+            !d.changed[(h - 1) * w + w / 2 - 1],
+            "すき間から遠いところまで混ざった"
+        );
+    }
+
     #[test]
     fn interpolation_round_trips() {
         for interp in [
@@ -1283,10 +1427,19 @@ mod tests {
             Interpolation::Linear,
             Interpolation::Perceptual,
         ] {
-            for rgb in [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [1.0, 0.0, 0.0], [0.2, 0.6, 0.9], [1.5, 0.3, 0.0]] {
+            for rgb in [
+                [0.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 0.0, 0.0],
+                [0.2, 0.6, 0.9],
+                [1.5, 0.3, 0.0],
+            ] {
                 let back = interp.decode(interp.encode(rgb));
                 for c in 0..3 {
-                    assert!((back[c] - rgb[c]).abs() < 1e-4, "{interp:?} {rgb:?} -> {back:?}");
+                    assert!(
+                        (back[c] - rgb[c]).abs() < 1e-4,
+                        "{interp:?} {rgb:?} -> {back:?}"
+                    );
                 }
             }
         }
@@ -1297,11 +1450,20 @@ mod tests {
         // 赤と緑の真ん中：Classic はそのまま平均、Linear は明るく、Perceptual は Classic より明るい
         let (w, h) = (64, 4);
         let src: Vec<[f32; 4]> = (0..w * h)
-            .map(|i| if i % w < w / 2 { [1.0, 0.0, 0.0, 1.0] } else { [0.0, 1.0, 0.0, 1.0] })
+            .map(|i| {
+                if i % w < w / 2 {
+                    [1.0, 0.0, 0.0, 1.0]
+                } else {
+                    [0.0, 1.0, 0.0, 1.0]
+                }
+            })
             .collect();
         let mid = |interp| {
             let s = Settings {
-                colors: vec![GroupColor::new([1.0, 0.0, 0.0]), GroupColor::new([0.0, 1.0, 0.0])],
+                colors: vec![
+                    GroupColor::new([1.0, 0.0, 0.0]),
+                    GroupColor::new([0.0, 1.0, 0.0]),
+                ],
                 width: 40.0,
                 interpolation: interp,
                 ..Default::default()
@@ -1313,8 +1475,14 @@ mod tests {
         let c = mid(Interpolation::Classic);
         let l = mid(Interpolation::Linear);
         let p = mid(Interpolation::Perceptual);
-        assert!(l[0] > c[0] + 0.1 && l[1] > c[1] + 0.1, "classic {c:?} linear {l:?}");
-        assert!(p[0] + p[1] > c[0] + c[1] + 0.1, "classic {c:?} perceptual {p:?}");
+        assert!(
+            l[0] > c[0] + 0.1 && l[1] > c[1] + 0.1,
+            "classic {c:?} linear {l:?}"
+        );
+        assert!(
+            p[0] + p[1] > c[0] + c[1] + 0.1,
+            "classic {c:?} perceptual {p:?}"
+        );
     }
 
     #[test]
