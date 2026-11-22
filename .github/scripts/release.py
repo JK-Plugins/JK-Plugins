@@ -1,4 +1,5 @@
-"""JK-Plugins のリリース用スクリプト（GitHub Actions から呼ぶ。手元でも dry run できる）。
+"""プラグイン集のリリース用スクリプト（GitHub Actions から呼ぶ。手元でも dry run できる）。
+リポジトリごとの名前などは .github/release.json に書く（JK-Plugins と fs-rs で同じスクリプトを使う）。
 
 サブコマンド
   plan [--tag vYYYY.MM.DD[.N]] [--out DIR]
@@ -35,8 +36,17 @@ MEDIACORE_MAC = "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCor
 # プラグインは MediaCore の中の JK-Plugins フォルダーにまとめて入れる（After Effects は中のフォルダーも読む）
 PLUGINS_SUBDIR = "JK-Plugins"
 PLUGINS_DIR_MAC = f"{MEDIACORE_MAC}/{PLUGINS_SUBDIR}"
-# Windows インストーラーの AppId（アップデート・アンインストールで同じアプリとして扱う。変えないこと）
-INSTALLER_APP_ID = "ac1cc6ae-3bbb-468f-a850-bb6338f627a0"
+# リポジトリごとの設定（.github/release.json）
+#   repo：owner/name、name：表示名、file_prefix：ファイル名の先頭、
+#   installer_app_id：Windows インストーラーの AppId（アップデート・アンインストールで同じアプリとして扱う。変えないこと）、
+#   pkg_identifier：macOS pkg の ID、uninstall_dir：Program Files の中のアンインストーラーの置き場所
+CONFIG = json.loads((ROOT / ".github" / "release.json").read_text(encoding="utf-8"))
+REPO = CONFIG["repo"]
+NAME = CONFIG["name"]
+FILE_PREFIX = CONFIG["file_prefix"]
+INSTALLER_APP_ID = CONFIG["installer_app_id"]
+PKG_IDENTIFIER = CONFIG["pkg_identifier"]
+UNINSTALL_DIR = CONFIG["uninstall_dir"]
 
 
 def run(*args, cwd=ROOT, check=True, capture=True):
@@ -148,15 +158,22 @@ def changed_since(ref, paths):
 def readme_version_errors(plist):
     """README のプラグイン一覧の行（| [名前](dir/README.md) | [版](…/tag/<crate>-v<版>) | 説明 |）が
     Cargo.toml の version と合っているか"""
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    errors = []
+    for readme in sorted(ROOT.glob("README*.md")):
+        errors += _readme_version_errors(readme, plist)
+    return errors
+
+
+def _readme_version_errors(readme, plist):
+    text = readme.read_text(encoding="utf-8")
     errors = []
     for p in plist:
         row = next((l for l in text.splitlines() if f"]({p['dir']}/README.md)" in l and l.startswith("|")), None)
-        expected = f"[{p['version']}](https://github.com/JK-Plugins/JK-Plugins/releases/tag/{p['archive_tag']})"
+        expected = f"[{p['version']}](https://github.com/{REPO}/releases/tag/{p['archive_tag']})"
         if row is None:
-            errors.append(f"{p['crate']}: README.md のプラグイン一覧に行がない（{expected} を書く）")
+            errors.append(f"{p['crate']}: {readme.name} のプラグイン一覧に行がない（{expected} を書く）")
         elif expected not in row:
-            errors.append(f"{p['crate']}: README.md のプラグイン一覧のバージョンを {expected} にする")
+            errors.append(f"{p['crate']}: {readme.name} のプラグイン一覧のバージョンを {expected} にする")
     return errors
 
 
@@ -195,7 +212,7 @@ def cmd_plan(args):
     # リリースノート
     updated = [p for p in plist if p["previous_version"] != p["version"]]
     same = [p for p in plist if p["previous_version"] == p["version"]]
-    lines = [f"# JK-Plugins {bundle_version}", ""]
+    lines = [f"# {NAME} {bundle_version}", ""]
     if updated:
         lines.append("## 更新")
         for p in updated:
@@ -212,12 +229,12 @@ def cmd_plan(args):
     lines += [
         "## インストール",
         "",
-        f"- **Windows**: `JK-Plugins-{bundle_version}-windows-setup.exe` を実行する（After Effects は終了しておく）。"
+        f"- **Windows**: `{FILE_PREFIX}-{bundle_version}-windows-setup.exe` を実行する（After Effects は終了しておく）。"
         "署名していないので「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」を押す。"
-        "アンインストールは 設定 → アプリ → インストールされているアプリ の JK-Plugins から。"
-        f"インストーラーを使わないときは `JK-Plugins-{bundle_version}-windows.zip` を解凍し、中の `JK-Plugins` フォルダーを "
+        f"アンインストールは 設定 → アプリ → インストールされているアプリ の {NAME} から。"
+        f"インストーラーを使わないときは `{FILE_PREFIX}-{bundle_version}-windows.zip` を解凍し、中の `JK-Plugins` フォルダーを "
         "`C:\\Program Files\\Adobe\\Common\\Plug-ins\\7.0\\MediaCore\\` にコピーする",
-        f"- **macOS**: `JK-Plugins-{bundle_version}-macos.pkg` を開く（MediaCore の中の JK-Plugins フォルダーに入る）。署名していないので最初は開けないため、"
+        f"- **macOS**: `{FILE_PREFIX}-{bundle_version}-macos.pkg` を開く（MediaCore の中の JK-Plugins フォルダーに入る）。署名していないので最初は開けないため、"
         "システム設定 → プライバシーとセキュリティ の「このまま開く」を押してからもう一度開く",
         "",
         "プラグインごとのファイル（`.aex` / `.plugin.zip`）も同じリリースに置いてある。",
@@ -242,7 +259,7 @@ def cmd_plan(args):
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
         with open(gh_out, "a", encoding="utf-8") as f:
-            f.write(f"tag={tag}\nbundle_version={bundle_version}\n")
+            f.write(f"tag={tag}\nbundle_version={bundle_version}\nname={NAME}\n")
 
 
 # ---------------------------------------------------------------- Windows
@@ -253,7 +270,7 @@ def cmd_package_windows(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
-    bundle = out / f"JK-Plugins-{plan['bundle_version']}-windows.zip"
+    bundle = out / f"{FILE_PREFIX}-{plan['bundle_version']}-windows.zip"
     staged = out / "installer-files"
     if staged.exists():
         shutil.rmtree(staged)
@@ -297,7 +314,7 @@ def find_iscc():
 def build_installer(plan, staged, out):
     """全プラグインを MediaCore の JK-Plugins フォルダーに入れるインストーラー（Inno Setup）。署名はしない。
     前の版が MediaCore の直下に入れたファイルは消す（同じプラグインが2つ読み込まれないように）。
-    アンインストーラーは Program Files の JK-Plugins に置く（MediaCore に余計な exe を置かない）"""
+    アンインストーラーは Program Files の UNINSTALL_DIR に置く（MediaCore に余計な exe を置かない）"""
     version = plan["bundle_version"]
     names = ", ".join(f"{p['plugin_name']} {p['version']}" for p in plan["plugins"])
     # Windows のファイルバージョンは数字4つまで（2026.11.22 → 2026.11.22.0）
@@ -307,15 +324,15 @@ def build_installer(plan, staged, out):
         "[Setup]",
         # AppId は { を2つ重ねて書く（Inno Setup の決まり）
         "AppId={{" + INSTALLER_APP_ID + "}",
-        "AppName=JK-Plugins",
+        f"AppName={NAME}",
         f"AppVersion={version}",
-        f"AppVerName=JK-Plugins {version}",
+        f"AppVerName={NAME} {version}",
         "AppPublisher=JK-Plugins",
-        "AppPublisherURL=https://github.com/JK-Plugins/JK-Plugins",
-        "AppSupportURL=https://github.com/JK-Plugins/JK-Plugins/releases",
+        f"AppPublisherURL=https://github.com/{REPO}",
+        f"AppSupportURL=https://github.com/{REPO}/releases",
         f"VersionInfoVersion={file_version}",
-        f"VersionInfoDescription=JK-Plugins for After Effects ({names})",
-        r"DefaultDirName={commonpf64}\JK-Plugins",
+        f"VersionInfoDescription={NAME} for After Effects ({names})",
+        "DefaultDirName={commonpf64}\\" + UNINSTALL_DIR,
         "DisableDirPage=yes",
         "DisableProgramGroupPage=yes",
         "PrivilegesRequired=admin",
@@ -325,11 +342,11 @@ def build_installer(plan, staged, out):
         "CloseApplications=yes",
         "RestartApplications=no",
         f"OutputDir={out.resolve()}",
-        f"OutputBaseFilename=JK-Plugins-{version}-windows-setup",
+        f"OutputBaseFilename={FILE_PREFIX}-{version}-windows-setup",
         "Compression=lzma2",
         "SolidCompression=yes",
         "WizardStyle=modern",
-        "UninstallDisplayName=JK-Plugins (After Effects)",
+        f"UninstallDisplayName={NAME} (After Effects)",
         "",
         "[Languages]",
         r'Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"',
@@ -355,7 +372,7 @@ def build_installer(plan, staged, out):
     # ISCC は BOM 付き UTF-8 を Unicode として読む
     script.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8-sig")
     run(find_iscc(), "/Q", str(script), capture=False)
-    exe = out / f"JK-Plugins-{version}-windows-setup.exe"
+    exe = out / f"{FILE_PREFIX}-{version}-windows-setup.exe"
     if not exe.exists():
         raise SystemExit(f"installer not produced: {exe}")
     return exe
@@ -468,7 +485,7 @@ def cmd_package_macos(args):
         c["BundleIsRelocatable"] = False
     with open(comp, "wb") as f:
         plistlib.dump(components, f)
-    pkg = out / f"JK-Plugins-{plan['bundle_version']}-macos.pkg"
+    pkg = out / f"{FILE_PREFIX}-{plan['bundle_version']}-macos.pkg"
     run(
         "pkgbuild",
         "--root",
@@ -480,7 +497,7 @@ def cmd_package_macos(args):
         "--scripts",
         str(scripts),
         "--identifier",
-        "com.jk-plugins.bundle",
+        PKG_IDENTIFIER,
         "--version",
         plan["bundle_version"],
         "--min-os-version",

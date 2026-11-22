@@ -1,0 +1,8 @@
+{
+  "repo": "JK-Plugins/JK-Plugins",
+  "name": "JK-Plugins",
+  "file_prefix": "JK-Plugins",
+  "installer_app_id": "ac1cc6ae-3bbb-468f-a850-bb6338f627a0",
+  "pkg_identifier": "com.jk-plugins.bundle",
+  "uninstall_dir": "JK-Plugins"
+}

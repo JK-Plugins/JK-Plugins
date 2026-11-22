@@ -133,7 +133,9 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
   上げ忘れとしてリリースが止まります
 - リリースのあと、配布サイト（GitHub Pages）も自動で作り直します（`.github/workflows/pages.yml`。
-  中身は README のプラグイン一覧と最新のリリースから `.github/scripts/site.py` が作る）
+  中身は JK-Plugins と [fs-rs](https://github.com/JK-Plugins/fs-rs) の README のプラグイン一覧と最新のリリースから
+  `.github/scripts/site.py` が作る。fs-rs のリリースは6時間ごとの作り直しで反映される）
+- リポジトリごとの名前やインストーラーの ID は `.github/release.json`（fs-rs と同じ `release.py` を使う）
 - `version` を上げたら、この README のプラグイン一覧のバージョン（`[版](…/releases/tag/<crate>-v<版>)`）も直します。
   合っていないとリリースが止まります。新しいプラグインを足したときは一覧に行を足します
 
