@@ -41,7 +41,10 @@ fn main() {
             Property::AE_Effect_Info_Flags(0),
             // 周囲のピクセルを参照するので PixIndependent は付けない
             Property::AE_Effect_Global_OutFlags(
-                OutFlags::DeepColorAware
+                OutFlags::DeepColorAware |
+                OutFlags::SendUpdateParamsUI |
+                // カーブのグラフを描く
+                OutFlags::CustomUI
             ),
             Property::AE_Effect_Global_OutFlags_2(
                 OutFlags2::FloatColorAware |
