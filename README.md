@@ -6,11 +6,12 @@ Those plugins are AE Plugins written by Rust.
 
 ## プラグイン一覧
 
-| プラグイン | 説明 |
-|---|---|
-| [JK Tone Gradient](tonegradient/README.md) | 指定した色どうしの境界をグラデーションにして、網点・線・ディザ・ノイズなどの質感をつける |
+| プラグイン | バージョン | 説明 |
+|---|---|---|
+| [JK Tone Gradient](tonegradient/README.md) | [0.1.0](https://github.com/JK-Plugins/JK-Plugins/releases/tag/tonegradient-v0.1.0) | 指定した色どうしの境界をグラデーションにして、網点・線・ディザ・ノイズなどの質感をつける |
 
 プラグイン名を押すと、それぞれの説明（パラメータ・使い方）を見られます。
+バージョンを押すと、その版のファイル（Windows：`.aex`、macOS：`.plugin.zip`）のリリースに飛びます。
 
 ## インストール
 
@@ -129,6 +130,8 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
   AE の制限で minor と patch は 0〜15）
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
   上げ忘れとしてリリースが止まります
+- `version` を上げたら、この README のプラグイン一覧のバージョン（`[版](…/releases/tag/<crate>-v<版>)`）も直します。
+  合っていないとリリースが止まります。新しいプラグインを足したときは一覧に行を足します
 
 手元で計画だけ確かめるには：
 
