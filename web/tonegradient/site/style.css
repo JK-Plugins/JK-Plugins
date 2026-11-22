@@ -1,12 +1,12 @@
 :root {
   --bg: #f1efe8; --surface: #f8f7f2; --text: #121210; --muted: #76746c; --line: rgba(18, 18, 16, .14);
-  --accent: #ff3d00; --accent2: #ff3d00; --accent-soft: rgba(255, 61, 0, .12);
+  --accent: #111; --accent2: #111; --accent-soft: rgba(17, 17, 17, .08);
   --shadow: none; --glow1: transparent; --glow2: transparent; --checker: #e6e3da;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e0e0c; --surface: #161614; --text: #ecebe3; --muted: #8e8c83; --line: rgba(236, 235, 227, .14);
-    --accent: #ff5a24; --accent2: #ff5a24; --accent-soft: rgba(255, 90, 36, .16);
+    --accent: #f1f0ec; --accent2: #f1f0ec; --accent-soft: rgba(255, 255, 255, .12);
     --shadow: none; --glow1: transparent; --glow2: transparent; --checker: #1d1d1a;
   }
 }
@@ -14,7 +14,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; color: var(--text); min-height: 100vh;
-  font: 500 14px/1.6 "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  font: 400 14px/1.6 "Inter", "Noto Sans JP", system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
   background:
     radial-gradient(900px 380px at 10% -10%, var(--glow1), transparent 70%),
     radial-gradient(800px 360px at 95% -6%, var(--glow2), transparent 70%),
@@ -30,7 +30,7 @@ nav a:hover { color: var(--text); }
 nav svg { width: 16px; height: 16px; }
 .head { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; margin: 12px 0 24px; }
 .head h1 {
-  margin: 0; font: 400 clamp(40px, 6vw, 64px)/1 "Instrument Serif", serif; letter-spacing: -0.01em;
+  margin: 0; font: 400 clamp(34px, 4.6vw, 52px)/1 "Instrument Serif", serif; letter-spacing: -0.01em;
 }
 .vline { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .ver, .tag { font-size: 12px; padding: 2px 10px; border-radius: 999px; font-weight: 600; }
@@ -118,7 +118,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 
 /* 配布サイトと同じ雰囲気に（角を落とさない・ドットの文字） */
 .viewer, .colors, .group, .seg, .seg button, .hold, .ghost, .file, select, .btn, .sw-item, .chip, .ver, .tag { border-radius: 0 !important; }
-.ver, .tag, .btn, .size, output, .ms, .group h2, nav { font-family: "DotGothic16", ui-monospace, monospace; letter-spacing: .03em; }
+.ver, .tag, .btn, .size, output, .ms, .group h2, nav { font-family: "Inter", "Noto Sans JP", system-ui, sans-serif; letter-spacing: 0; }
 .group { border-color: var(--line); }
 .dl { gap: 0; }
 .dl .btn { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 12px; gap: 8px; min-width: 170px; padding: 9px 12px; font-weight: 400; }
@@ -130,7 +130,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 /* After Effects へコピー */
 .ae .note2 { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.6; }
 .copy { width: 100%; margin-top: 8px; padding: 10px 12px; border: 0; cursor: pointer; background: var(--text); color: var(--bg);
-  font: 400 14px/1 "DotGothic16", ui-monospace, monospace; letter-spacing: .04em; }
+  font: 700 14px/1 "Inter", "Noto Sans JP", system-ui, sans-serif; }
 .copy:hover { background: var(--accent); color: #fff; }
 .copy.done { background: var(--accent); color: #fff; }
 #aetext { width: 100%; height: 120px; margin-top: 8px; font: 11px/1.4 ui-monospace, monospace; background: var(--bg); color: var(--text);

@@ -25,9 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SELF = "JK-Plugins/JK-Plugins"
 COLLECTIONS = [
-    {"repo": "JK-Plugins/JK-Plugins", "title": "JK-Plugins", "lead": "オリジナル"},
+    {"repo": "JK-Plugins/JK-Plugins", "title": "JK-Plugins", "lead": "オリジナル", "lead_en": "Originals."},
     {"repo": "JK-Plugins/fs-rs", "title": "fs-rs",
-     "lead": "F's Plugin（bryful 氏）の Rust 版"},
+     "lead": "F's Plugin（bryful 氏）の Rust 版", "lead_en": "F's Plugins by bryful, in Rust."},
 ]
 ROW = re.compile(
     r"^\|\s*\[(?P<name>[^\]]+)\]\((?P<dir>[^)]+)/README\.md\)\s*\|"
@@ -146,64 +146,63 @@ ICON_SEARCH = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
                'aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>')
 
 ASSETS = Path(__file__).resolve().parent / "site"
-FONTS = ("https://fonts.googleapis.com/css2?family=DotGothic16&family=Instrument+Serif:ital@0;1"
-         "&family=Shippori+Mincho+B1:wght@500;600;800&display=swap")
+FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900"
+         "&family=Instrument+Serif:ital@0;1&family=Noto+Sans+JP:wght@400;700&display=swap")
 
 
-def px(tag, text, cls="", attrs=""):
-    """ドットで描く見出し（JS が canvas に置き換える）"""
-    return f'<{tag} class="px {cls}"{attrs}><span class="px-txt">{e(text)}</span></{tag}>'
+def _mark():
+    """マーク：7×7 のドットのきらきら"""
+    rows = ["...X...", "...X...", "..XXX..", "XXX.XXX", "..XXX..", "...X...", "...X..."]
+    rects = "".join(f'<rect x="{x}" y="{y}" width="1" height="1"/>'
+                    for y, r in enumerate(rows) for x, ch in enumerate(r) if ch == "X")
+    return f'<span class="mark"><svg viewBox="0 0 7 7" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true">{rects}</svg></span>'
 
 
-def pretty_name(name):
-    """JK Alpha Fix Fs → 頭の JK と末尾の Fs を薄く"""
+MARK = _mark()
+
+
+def short_name(name):
+    """JK Alpha Fix Fs → Alpha Fix（ポスターの一言にする）"""
     parts = name.split(" ")
-    out = [e(x) for x in parts]
-    if len(parts) > 2 and parts[0] == "JK":
-        out[0] = f'<span class="pre">{out[0]}</span>'
-    if len(parts) > 2 and parts[-1] == "Fs":
-        out[-1] = f'<span class="suf">{out[-1]}</span>'
-    return " ".join(out)
+    if len(parts) > 1 and parts[0] == "JK":
+        parts = parts[1:]
+    if len(parts) > 1 and parts[-1] == "Fs":
+        parts = parts[:-1]
+    return " ".join(parts)
 
 
 def files_html(p, released):
     """個別ファイルのボタン（Windows・macOS で同じ形）"""
     if not released:
-        return '<div class="files"><span class="soon mono">準備中</span></div>'
+        return '<div class="files"><span class="soon">準備中</span></div>'
 
     def b(ext, size, icon, os_name):
         f = f'{p["stem"]}{ext}'
-        return (f'<a class="fbtn" href="{e(p["download"])}/{e(f)}" title="{e(f)}" data-cur="{e(fmt_size(size) or "DL")}">'
-                f'{icon}<span>{os_name}</span><span class="size">{fmt_size(size)}</span>{ICON_DL}</a>')
+        sz = fmt_size(size)
+        return (f'<a class="fbtn" href="{e(p["download"])}/{e(f)}" title="{e(os_name)}：{e(f)}" data-cur="↓ {e(sz or os_name)}">'
+                f'{icon}<span class="os">{os_name}</span><span class="size">{sz}</span>{ICON_DL}</a>')
 
     return ('<div class="files">' + b(".aex", p["aex_size"], ICON_WIN, "Windows")
             + b(".plugin.zip", p["zip_size"], ICON_MAC, "macOS") + '</div>')
 
 
-def collection_head(c, i, n):
+def collection_head(c):
     rel = c["release"]
-    facts = f'<div><dt>PLUGINS</dt><dd>{len(c["plugins"])}</dd></div>'
     if rel is None:
-        get = '<span class="soon mono">準備中</span>'
+        get = '<span class="soon">準備中</span>'
     else:
-        facts += (f'<div><dt>RELEASE</dt><dd>{e(rel["version"])}</dd></div>'
-                  f'<div><dt>DATE</dt><dd>{e(rel["date"])}</dd></div>')
-
         def big(asset, icon, os_name, ext):
             if asset is None:
-                return (f'<a class="big" href="{e(rel["url"])}" data-cur="OPEN">{icon}<span><b>{os_name}</b>'
-                        f'<small>リリースのページへ</small></span></a>')
+                return f'<a class="big" href="{e(rel["url"])}" data-cur="Release">{icon}<span>{os_name}</span><small></small></a>'
             url, size = asset
-            sz = f" · {fmt_size(size)}" if size else ""
-            return (f'<a class="big" href="{e(url)}" data-cur="DOWNLOAD">{icon}<span><b>{os_name}</b>'
-                    f'<small>INSTALLER {ext}{sz}</small></span>{ICON_DL}</a>')
+            return (f'<a class="big" href="{e(url)}" title="インストーラー {ext}" data-cur="↓ {e(fmt_size(size))}">'
+                    f'{icon}<span>{os_name}</span><small>{ext} · {fmt_size(size)}</small>{ICON_DL}</a>')
 
         get = ('<div class="installers">' + big(rel["win_setup"], ICON_WIN, "Windows", ".exe")
                + big(rel["mac_pkg"], ICON_MAC, "macOS", ".pkg") + '</div>'
-               + f'<a class="more mono" href="{e(rel["url"])}" data-cur="RELEASE">zip・過去の版 →</a>')
+               + f'<a class="more" href="{e(rel["url"])}">v{e(rel["version"])} ・ zip・過去の版 →</a>')
     return f"""<header class="col-head">
-        <div class="col-idx mono"><span>{i:02d} / {n:02d}</span><span>COLLECTION</span></div>
-        <div>{px("h2", c["title"])}<p class="lead">{e(c["lead"])}</p><dl class="facts mono">{facts}</dl></div>
+        <div><h2>{e(c["title"])}<span class="p">({len(c["plugins"])})</span></h2><p class="lead">{e(c["lead_en"])}</p></div>
         <div class="get">{get}</div>
       </header>"""
 
@@ -212,56 +211,55 @@ def search_key(p):
     return " ".join([p["name"], p["desc"], p["dir"]])
 
 
-def plugin_card(p, released, no):
-    """画像（またはブラウザで試すページ）があるプラグイン：大きいカード"""
+def sign(c, p):
+    return f'<div class="sign" title="{e(p["name"])}（{e(c["title"])}）">{MARK}</div>'
+
+
+def poster_feature(c, p, released, no, wide=False):
+    """画像のあるプラグイン：2×2 の大きいポスター"""
     href = p["try"] or p["readme"]
-    thumb = (f'<a class="thumb" href="{e(href)}" data-cur="{"TRY" if p["try"] else "READ"}">'
-             f'<img src="{e(p["image"])}" alt="" loading="lazy"></a>' if p["image"] else "")
-    date = f' · {e(p["date"])}' if p["date"] else ""
-    try_btn = (f'<a class="try" href="{e(p["try"])}" data-cur="TRY"><span>ブラウザで試す</span>{ICON_PLAY}</a>'
-               if p["try"] else "")
+    sub = "try it in your browser" if p["try"] else "for After Effects"
+    img = (f'<figure><a href="{e(href)}" data-cur="{"Try" if p["try"] else "README"}">'
+           f'<img src="{e(p["image"])}" alt="{e(p["name"])} の作例" loading="lazy"></a></figure>' if p["image"] else "")
+    try_btn = f'<a class="try" href="{e(p["try"])}" data-cur="Try">ブラウザで試す {ICON_PLAY}</a>' if p["try"] else ""
     return f"""
-        <article class="tile rv" data-q="{e(search_key(p))}">
-          {thumb}
-          <div class="body">
-            <div class="top"><span class="no">{no:03d}</span><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}{date}</a></div>
-            <h3><a href="{e(p["readme"])}" data-cur="README">{pretty_name(p["name"])}</a></h3>
-            <p>{e(p["desc"])}</p>
-            {try_btn}
-            {files_html(p, released)}
-          </div>
-        </article>"""
-
-
-def plugin_item(p, released, no):
-    """画像の無いプラグイン：一覧の 1 マス"""
-    return f"""
-        <article class="item rv" data-q="{e(search_key(p))}">
-          <div class="top"><span class="no">{no:03d}</span><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a></div>
-          <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{pretty_name(p["name"])}</a></h3>
-          <p>{e(p["desc"])}</p>
+        <article class="poster feature{" wide" if wide else ""} grain rv" data-q="{e(search_key(p))}">
+          <h3><a href="{e(p["readme"])}" data-cur="README"><span class="caps">{e(short_name(p["name"]))}.</span></a><span class="it">{sub}</span></h3>
+          {img}
+          <div class="side">
+          <p class="cap">{e(p["desc"])}</p>
+          {try_btn}
+          {sign(c, p)}
           {files_html(p, released)}
+          </div>
+          <span class="no">No. {no:03d} · v{e(p["version"])}</span>
         </article>"""
 
 
-def collection(c, i, n, start):
+def poster(c, p, released, no):
+    """画像の無いプラグイン：文字だけのポスター"""
+    return f"""
+        <article class="poster grain rv" data-q="{e(search_key(p))}">
+          <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{e(short_name(p["name"]))}.</a></h3>
+          <p class="cap">{e(p["desc"])}</p>
+          {sign(c, p)}
+          {files_html(p, released)}
+          <span class="no">No. {no:03d} · v{e(p["version"])}</span>
+        </article>"""
+
+
+def collection(c, start):
     released = c["release"] is not None
-    big = [p for p in c["plugins"] if p["image"] or p["try"]]
-    small = [p for p in c["plugins"] if not (p["image"] or p["try"])]
     body, no = "", start
-    if big:
-        body += '\n      <div class="grid">'
-        for p in big:
-            no += 1
-            body += plugin_card(p, released, no)
-        body += "\n      </div>"
-    if small:
-        body += '\n      <div class="list">'
-        for p in small:
-            no += 1
-            body += plugin_item(p, released, no)
-        body += "\n      </div>"
-    return f'\n    <section class="col" id="{e(c["id"])}">\n      {collection_head(c, i, n)}{body}\n    </section>'
+    for p in sorted(c["plugins"], key=lambda p: not (p["image"] or p["try"])):
+        no += 1
+        if p["image"] or p["try"]:
+            # 1 本だけのコレクションは、横長（画像が左・文字が右）で全部の列を使う
+            body += poster_feature(c, p, released, no, wide=len(c["plugins"]) == 1)
+        else:
+            body += poster(c, p, released, no)
+    return (f'\n    <section class="col" id="{e(c["id"])}">\n      {collection_head(c)}'
+            f'\n      <div class="posters">{body}\n      </div>\n    </section>')
 
 
 def render(collections):
@@ -270,14 +268,11 @@ def render(collections):
     for c in collections:
         c["id"] = c["title"].lower()
     total = sum(len(c["plugins"]) for c in collections)
-    n = len(collections)
     cols, start = "", 0
-    for i, c in enumerate(collections, 1):
-        cols += collection(c, i, n, start)
+    for c in collections:
+        cols += collection(c, start)
         start += len(c["plugins"])
-    jump = "".join(f'<a href="#{e(c["id"])}" data-cur="JUMP">{e(c["title"])}<span>{len(c["plugins"])}</span></a>'
-                   for c in collections)
-    names = "".join(f'<span>{e(p["name"])}</span><i>■</i>' for c in collections for p in c["plugins"])
+    jump = "".join(f'<a href="#{e(c["id"])}">{e(c["title"])}<span>({len(c["plugins"])})</span></a>' for c in collections)
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -292,29 +287,22 @@ def render(collections):
 </head>
 <body>
 <div class="wrap">
-  <nav class="top mono"><span class="logo"><i></i>JK—PLUGINS</span><a href="https://github.com/{SELF}" data-cur="GITHUB">GITHUB ↗</a></nav>
-  <header class="hero">
-    <div class="hero-meta mono"><span>AFTER EFFECTS PLUG-INS</span><span>WRITTEN IN RUST</span><span>WINDOWS / MACOS</span><span>FREE</span></div>
-    {px("h1", "JK-Plugins", attrs=" data-fit")}
-    <div class="hero-foot">
-      <p class="lead">Rust で書いた After Effects プラグイン。<br>Windows・macOS 対応、無料。</p>
-      <div class="stats mono"><div><b>{total}</b><span>PLUGINS</span></div><div><b>{n:02d}</b><span>COLLECTIONS</span></div></div>
-    </div>
+  <nav class="top"><span class="logo">{MARK}JK-Plugins</span><a class="gh" href="https://github.com/{SELF}">{ICON_GH}GitHub</a></nav>
+  <header class="hero grain">
+    <div class="ghost" aria-hidden="true">JK</div>
+    <h1><span class="b">Plugins</span><span class="i">for After Effects<span class="p">({total})</span></span></h1>
   </header>
-  <div class="marquee" aria-hidden="true"><div class="mq-track">{names}{names}</div></div>
   <div class="bar"><div class="bar-in">
-    <label class="search">{ICON_SEARCH}<input id="q" type="search" placeholder="SEARCH — 名前・説明で探す" autocomplete="off" aria-label="プラグインを探す"><kbd>/</kbd></label>
-    <span class="count mono"><b id="count">{total:03d}</b> / {total:03d}</span>
-    <div class="jump mono">{jump}</div>
+    <label class="search">{ICON_SEARCH}<input id="q" type="search" placeholder="プラグインを探す（名前・説明）" autocomplete="off" aria-label="プラグインを探す"><span class="count" id="count">({total})</span></label>
+    <div class="jump">{jump}</div>
   </div></div>
 {cols}
-  <p class="empty mono" id="empty" hidden>NO RESULTS — 見つかりませんでした</p>
-  <footer class="mono">
-    {px("div", "JK-Plugins")}
-    {"".join(f'<a href="https://github.com/{c["repo"]}">GITHUB: {e(c["title"])} ↗</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告 ↗</a>
+  <p class="empty" id="empty" hidden>Nothing here.<small>見つかりませんでした</small></p>
+  <footer>
+    <span class="logo">{MARK}JK-Plugins</span>
+    {"".join(f'<a href="https://github.com/{c["repo"]}">GitHub: {e(c["title"])}</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告</a>
   </footer>
 </div>
-<div class="readout" aria-hidden="true">SCROLL <b>000</b>%</div>
 <script>{js}</script>
 </body>
 </html>
