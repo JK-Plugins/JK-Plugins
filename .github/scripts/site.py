@@ -7,6 +7,7 @@
   （README-ja.md があればそれ、無ければ README.md。リリースの計画でバージョンが Cargo.toml と合っていることを確かめている）
 - ダウンロードのリンクとファイルサイズは各リポジトリの最新のまとめリリース（gh release view）から作る。リリースがまだ無ければ「準備中」
 - 画像の無いプラグインは詰めた一覧で並べる。上の検索欄で名前・説明から絞り込める
+- 見た目と動きは .github/scripts/site/ の style.css・main.js（index.html に埋め込む）
 - 画像はこのリポジトリのプラグインのフォルダーの docs/samples/00_overview.png があれば使う
 - web/<プラグインのフォルダー>/ があれば、そのプラグインをブラウザで試すページ（try/<フォルダー>/）も作る。
   web/<フォルダー>/site/ のファイルを置き、crate を wasm32-unknown-unknown でビルドした .wasm を添える
@@ -111,191 +112,6 @@ def e(s):
     return html.escape(str(s), quote=True)
 
 
-CSS = """
-:root {
-  --bg: #fafafa; --surface: #ffffff; --text: #0f0f12; --muted: #6e6e78; --line: rgba(15, 15, 18, .08);
-  --line2: rgba(15, 15, 18, .14); --accent: #e0457b; --accent2: #7c5cff; --accent-soft: rgba(224, 69, 123, .10);
-  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
-  --glow1: rgba(224, 69, 123, .20); --glow2: rgba(124, 92, 255, .18); --bar: rgba(250, 250, 250, .82);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0b0b0e; --surface: #141418; --text: #f4f4f6; --muted: #9b9ba6; --line: rgba(255, 255, 255, .08);
-    --line2: rgba(255, 255, 255, .16); --accent: #ff6b9c; --accent2: #9b85ff; --accent-soft: rgba(255, 107, 156, .14);
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
-    --glow1: rgba(255, 107, 156, .16); --glow2: rgba(155, 133, 255, .14); --bar: rgba(11, 11, 14, .82);
-  }
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 84px; }
-body {
-  margin: 0; color: var(--text); min-height: 100vh;
-  font: 15px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
-  background:
-    radial-gradient(900px 420px at 12% -8%, var(--glow1), transparent 70%),
-    radial-gradient(800px 380px at 92% -4%, var(--glow2), transparent 70%),
-    var(--bg);
-  background-repeat: no-repeat;
-}
-a { color: inherit; text-decoration: none; }
-code { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft);
-  padding: 1px 6px; border-radius: 6px; word-break: break-all; }
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
-nav.top { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; font-size: 14px; }
-.logo { font-weight: 800; letter-spacing: -0.02em; font-size: 16px; }
-.links { display: flex; gap: 18px; align-items: center; }
-.links a { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
-.links a:hover { color: var(--text); }
-
-.hero { padding: 40px 0 28px; text-align: center; }
-.hero h1 {
-  margin: 0; font-size: clamp(40px, 8vw, 72px); line-height: 1; letter-spacing: -0.04em; font-weight: 800;
-  background: linear-gradient(100deg, var(--text) 30%, var(--accent) 70%, var(--accent2));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.hero p { margin: 14px 0 0; color: var(--muted); font-size: 17px; }
-.stats { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
-.stat { font-size: 13px; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
-  color: var(--muted); font-variant-numeric: tabular-nums; }
-.stat b { color: var(--text); font-weight: 700; margin-right: 4px; }
-
-/* 検索バー（上に貼りつく） */
-.bar { position: sticky; top: 0; z-index: 10; margin: 0 -20px; padding: 12px 20px;
-  background: var(--bar); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
-  border-bottom: 1px solid transparent; transition: border-color .2s; }
-.bar.stuck { border-bottom-color: var(--line); }
-.bar-in { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.search { position: relative; flex: 1 1 320px; }
-.search svg { position: absolute; left: 14px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
-.search input { width: 100%; font: inherit; color: inherit; padding: 10px 44px 10px 40px; border-radius: 12px; border: 0;
-  background: var(--surface); box-shadow: inset 0 0 0 1px var(--line2), var(--shadow); outline: none; }
-.search input:focus { box-shadow: inset 0 0 0 2px var(--accent), var(--shadow); }
-.search input::-webkit-search-cancel-button { display: none; }
-.search kbd { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font: 600 11px/1 ui-monospace, monospace;
-  color: var(--muted); border: 1px solid var(--line2); border-radius: 5px; padding: 3px 6px; pointer-events: none; }
-.search input:focus + kbd, .search input:not(:placeholder-shown) + kbd { display: none; }
-.jump { display: flex; gap: 6px; flex-wrap: wrap; }
-.jump a { font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 999px; background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
-.jump a:hover { box-shadow: inset 0 0 0 1px var(--text); }
-.jump a span { color: var(--muted); font-weight: 400; margin-left: 4px; font-variant-numeric: tabular-nums; }
-.empty { text-align: center; color: var(--muted); padding: 56px 0; }
-.empty[hidden] { display: none; }
-
-/* コレクション */
-.col { margin: 40px 0 64px; }
-.col[hidden] { display: none; }
-.col-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px 32px;
-  padding: 28px 32px; border-radius: 24px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
-.col-head h2 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; font-weight: 800; }
-.meta { color: var(--muted); font-size: 14px; margin-top: 6px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
-  color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.chip b { color: var(--text); font-weight: 600; margin-left: 6px; }
-.get { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.installers { display: flex; gap: 10px; flex-wrap: wrap; }
-.big { display: inline-flex; align-items: center; gap: 12px; padding: 12px 24px 12px 18px; border-radius: 16px;
-  color: #fff; background: linear-gradient(120deg, var(--accent), var(--accent2)); text-align: left;
-  box-shadow: 0 10px 30px var(--glow1); transition: transform .15s, box-shadow .15s; min-width: 200px; }
-.big:hover { transform: translateY(-2px); box-shadow: 0 14px 36px var(--glow1); }
-.big svg { width: 24px; height: 24px; flex: none; }
-.big b { display: block; font-size: 17px; line-height: 1.2; }
-.big small { display: block; font-size: 12px; opacity: .85; font-variant-numeric: tabular-nums; }
-.big > span { flex: 1; }
-.big svg.dl { width: 18px; height: 18px; opacity: .9; margin-left: 4px; }
-.more { color: var(--muted); font-size: 13px; }
-.more:hover { color: var(--text); }
-.soon { color: var(--muted); font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
-  border: 1px dashed var(--line2); white-space: nowrap; }
-.ver { font-size: 12px; padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
-  font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-/* 画像つきのカード */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 18px; margin-top: 20px; }
-.tile {
-  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);
-  border-radius: 20px; overflow: hidden; box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s;
-}
-.tile:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 0 0 1px var(--accent-soft); }
-.thumb { display: block; aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); background: #fff; }
-.thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; transition: transform .4s; }
-.tile:hover .thumb img { transform: scale(1.03); }
-.body { padding: 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.body h3 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
-.vline { display: flex; align-items: center; gap: 8px; }
-.date { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.body p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
-.doc { font-size: 13px; color: var(--muted); }
-.doc:hover { color: var(--text); }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
-.try { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; flex: 1 1 100%;
-  border-radius: 999px; font-weight: 600; font-size: 14px; color: #fff;
-  background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 6px 18px var(--glow1); transition: transform .15s; }
-.try:hover { transform: translateY(-1px); }
-.try svg { width: 14px; height: 14px; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 12px; border-radius: 999px;
-  font-weight: 600; font-size: 13px; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--line2); flex: 1; }
-.btn:hover { box-shadow: inset 0 0 0 1px var(--text); }
-.btn svg { width: 14px; height: 14px; flex: none; }
-.btn small { font-size: 11px; font-weight: 600; color: var(--accent); }
-.size { font-size: 11px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
-.btn svg.dl, .mini svg.dl { width: 13px; height: 13px; color: var(--accent); }
-.mini:hover .size, .mini:hover svg.dl { color: inherit; }
-
-/* 画像の無いプラグイン：詰めた一覧 */
-.list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 10px; margin-top: 20px; }
-.item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 12px; border-radius: 16px; background: var(--surface);
-  border: 1px solid var(--line); transition: border-color .15s, box-shadow .15s; }
-.item:hover { border-color: var(--line2); box-shadow: var(--shadow); }
-.item[hidden], .tile[hidden] { display: none; }
-.item h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: baseline;
-  gap: 8px; justify-content: space-between; }
-.item h3 a:hover { color: var(--accent); }
-.item p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; flex: 1; }
-.item .row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.item .doc { margin-right: auto; font-size: 12px; white-space: nowrap; }
-.nw { white-space: nowrap; }
-.mini { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 12px;
-  font-weight: 600; box-shadow: inset 0 0 0 1px var(--line2); white-space: nowrap; }
-.mini:hover { background: var(--text); color: var(--bg); box-shadow: none; }
-.mini svg { width: 12px; height: 12px; }
-mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 1px; }
-
-/* インストール */
-.install { margin: 24px 0 64px; }
-.install > h2 { font-size: 28px; letter-spacing: -0.02em; font-weight: 800; margin: 0 0 6px; }
-.install > p { color: var(--muted); margin: 0 0 20px; }
-.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 18px; }
-.step { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 22px 24px; box-shadow: var(--shadow); }
-.step h3 { margin: 0 0 10px; display: flex; gap: 10px; align-items: center; font-size: 18px; }
-.step h3 svg { width: 20px; height: 20px; }
-.step ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
-.step li::marker { color: var(--accent); font-weight: 700; }
-.step .sub { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-details { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 20px; font-size: 14px; }
-details summary { cursor: pointer; font-weight: 600; }
-details ul { margin: 10px 0 0; padding-left: 1.2em; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
-
-footer { margin-top: 24px; padding: 28px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px;
-  display: flex; gap: 20px; flex-wrap: wrap; }
-footer a:hover { color: var(--text); }
-@media (max-width: 900px) {
-  .col-head { grid-template-columns: 1fr; }
-  .get { align-items: flex-start; }
-}
-@media (max-width: 720px) {
-  .hero { padding: 24px 0 20px; }
-  .col { margin: 28px 0 48px; }
-  .col-head { padding: 22px 20px; }
-  .get { align-items: stretch; width: 100%; }
-  .installers { flex-direction: column; }
-  .big { justify-content: center; }
-  .more { text-align: center; }
-  .search kbd { display: none; }
-}
-"""
-
 ICON_WIN = ('<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
             '<path d="M3 5.5 10.5 4.5v7H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>')
 ICON_MAC = ('<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
@@ -329,172 +145,139 @@ def size_tag(n):
 ICON_SEARCH = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
                'aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>')
 
-# 検索：空白で区切った語がすべて名前・説明・フォルダー名に含まれるものだけ残す（全角・半角や大文字・小文字は区別しない）
-JS = """
-(() => {
-  const q = document.getElementById('q'), bar = document.querySelector('.bar'), empty = document.getElementById('empty');
-  const items = [...document.querySelectorAll('[data-q]')], cols = [...document.querySelectorAll('.col')];
-  const norm = s => s.normalize('NFKC').toLowerCase();
-  items.forEach(el => { el._q = norm(el.dataset.q); });
-  const run = () => {
-    const terms = norm(q.value).split(/\\s+/).filter(Boolean);
-    let total = 0;
-    for (const c of cols) {
-      let n = 0;
-      for (const el of c.querySelectorAll('[data-q]')) {
-        const ok = terms.every(t => el._q.includes(t));
-        el.hidden = !ok; if (ok) n++;
-      }
-      c.hidden = terms.length > 0 && n === 0;
-      const j = document.querySelector('.jump a[href="#' + c.id + '"] span');
-      if (j) j.textContent = n;
-      total += n;
-    }
-    empty.hidden = total > 0;
-    const u = new URL(location.href);
-    if (q.value) u.searchParams.set('q', q.value); else u.searchParams.delete('q');
-    history.replaceState(null, '', u);
-  };
-  q.addEventListener('input', run);
-  q.addEventListener('keydown', ev => { if (ev.key === 'Escape') { q.value = ''; run(); q.blur(); } });
-  document.addEventListener('keydown', ev => {
-    if (ev.key === '/' && document.activeElement !== q && !ev.ctrlKey && !ev.metaKey) { ev.preventDefault(); q.focus(); }
-  });
-  const init = new URLSearchParams(location.search).get('q');
-  if (init) { q.value = init; run(); }
-  new IntersectionObserver(([e]) => bar.classList.toggle('stuck', e.intersectionRatio < 1), { threshold: [1] })
-    .observe(document.getElementById('sentinel'));
-})();
-"""
+ASSETS = Path(__file__).resolve().parent / "site"
+FONTS = ("https://fonts.googleapis.com/css2?family=DotGothic16&family=Instrument+Serif:ital@0;1"
+         "&family=Shippori+Mincho+B1:wght@500;600;800&display=swap")
 
 
-def collection_head(c):
+def px(tag, text, cls="", attrs=""):
+    """ドットで描く見出し（JS が canvas に置き換える）"""
+    return f'<{tag} class="px {cls}"{attrs}><span class="px-txt">{e(text)}</span></{tag}>'
+
+
+def pretty_name(name):
+    """JK Alpha Fix Fs → 頭の JK と末尾の Fs を薄く"""
+    parts = name.split(" ")
+    out = [e(x) for x in parts]
+    if len(parts) > 2 and parts[0] == "JK":
+        out[0] = f'<span class="pre">{out[0]}</span>'
+    if len(parts) > 2 and parts[-1] == "Fs":
+        out[-1] = f'<span class="suf">{out[-1]}</span>'
+    return " ".join(out)
+
+
+def files_html(p, released):
+    """個別ファイルのボタン（Windows・macOS で同じ形）"""
+    if not released:
+        return '<div class="files"><span class="soon mono">準備中</span></div>'
+
+    def b(ext, size, icon, os_name):
+        f = f'{p["stem"]}{ext}'
+        return (f'<a class="fbtn" href="{e(p["download"])}/{e(f)}" title="{e(f)}" data-cur="{e(fmt_size(size) or "DL")}">'
+                f'{icon}<span>{os_name}</span><span class="size">{fmt_size(size)}</span>{ICON_DL}</a>')
+
+    return ('<div class="files">' + b(".aex", p["aex_size"], ICON_WIN, "Windows")
+            + b(".plugin.zip", p["zip_size"], ICON_MAC, "macOS") + '</div>')
+
+
+def collection_head(c, i, n):
     rel = c["release"]
+    facts = f'<div><dt>PLUGINS</dt><dd>{len(c["plugins"])}</dd></div>'
     if rel is None:
-        chips, get = "", '<span class="soon">準備中</span>'
+        get = '<span class="soon mono">準備中</span>'
     else:
-        chips = (f'<div class="chips"><span class="chip">プラグイン<b>{len(c["plugins"])}</b></span>'
-                 f'<span class="chip">リリース<b>{e(rel["version"])}</b></span>'
-                 f'<span class="chip">公開<b>{e(rel["date"])}</b></span></div>')
+        facts += (f'<div><dt>RELEASE</dt><dd>{e(rel["version"])}</dd></div>'
+                  f'<div><dt>DATE</dt><dd>{e(rel["date"])}</dd></div>')
 
         def big(asset, icon, os_name, ext):
             if asset is None:
-                return f'<a class="big" href="{e(rel["url"])}">{icon}<span><b>{os_name}</b><small>リリースのページへ</small></span></a>'
+                return (f'<a class="big" href="{e(rel["url"])}" data-cur="OPEN">{icon}<span><b>{os_name}</b>'
+                        f'<small>リリースのページへ</small></span></a>')
             url, size = asset
-            sz = f' <span class="nw">· {fmt_size(size)}</span>' if size else ""
-            return (f'<a class="big" href="{e(url)}">{icon}<span><b>{os_name}</b>'
-                    f'<small>インストーラー {ext}{sz}</small></span>{ICON_DL}</a>')
+            sz = f" · {fmt_size(size)}" if size else ""
+            return (f'<a class="big" href="{e(url)}" data-cur="DOWNLOAD">{icon}<span><b>{os_name}</b>'
+                    f'<small>INSTALLER {ext}{sz}</small></span>{ICON_DL}</a>')
 
-        get = (f'<div class="installers">'
-               + big(rel["win_setup"], ICON_WIN, "Windows", ".exe")
-               + big(rel["mac_pkg"], ICON_MAC, "macOS", ".pkg")
-               + f'</div><a class="more" href="{e(rel["url"])}">zip・過去の版 →</a>')
-    return f"""<div class="col-head">
-        <div><h2>{e(c["title"])}</h2><div class="meta">{e(c["lead"])}</div>{chips}</div>
+        get = ('<div class="installers">' + big(rel["win_setup"], ICON_WIN, "Windows", ".exe")
+               + big(rel["mac_pkg"], ICON_MAC, "macOS", ".pkg") + '</div>'
+               + f'<a class="more mono" href="{e(rel["url"])}" data-cur="RELEASE">zip・過去の版 →</a>')
+    return f"""<header class="col-head">
+        <div class="col-idx mono"><span>{i:02d} / {n:02d}</span><span>COLLECTION</span></div>
+        <div>{px("h2", c["title"])}<p class="lead">{e(c["lead"])}</p><dl class="facts mono">{facts}</dl></div>
         <div class="get">{get}</div>
-      </div>"""
+      </header>"""
 
 
 def search_key(p):
     return " ".join([p["name"], p["desc"], p["dir"]])
 
 
-def plugin_card(p, released):
+def plugin_card(p, released, no):
     """画像（またはブラウザで試すページ）があるプラグイン：大きいカード"""
     href = p["try"] or p["readme"]
-    thumb = (f'<a class="thumb" href="{e(href)}"><img src="{e(p["image"])}" alt="" loading="lazy"></a>'
-             if p["image"] else "")
-    date = f'<span class="date">{e(p["date"])}</span>' if p["date"] else ""
-    if released:
-        files = (f'<a class="btn" href="{e(p["download"])}/{e(p["stem"])}.aex" title="{e(p["stem"])}.aex">'
-                 f'{ICON_WIN}Windows<small>.aex</small>{size_tag(p["aex_size"])}{ICON_DL}</a>'
-                 f'<a class="btn" href="{e(p["download"])}/{e(p["stem"])}.plugin.zip" title="{e(p["stem"])}.plugin.zip">'
-                 f'{ICON_MAC}macOS<small>.plugin</small>{size_tag(p["zip_size"])}{ICON_DL}</a>')
-    else:
-        files = '<span class="soon">準備中</span>'
-    try_btn = f'<a class="try" href="{e(p["try"])}">{ICON_PLAY}ブラウザで試す</a>' if p["try"] else ""
+    thumb = (f'<a class="thumb" href="{e(href)}" data-cur="{"TRY" if p["try"] else "READ"}">'
+             f'<img src="{e(p["image"])}" alt="" loading="lazy"></a>' if p["image"] else "")
+    date = f' · {e(p["date"])}' if p["date"] else ""
+    try_btn = (f'<a class="try" href="{e(p["try"])}" data-cur="TRY"><span>ブラウザで試す</span>{ICON_PLAY}</a>'
+               if p["try"] else "")
     return f"""
-        <article class="tile" data-q="{e(search_key(p))}">
+        <article class="tile rv" data-q="{e(search_key(p))}">
           {thumb}
           <div class="body">
-            <h3><a href="{e(href)}">{e(p["name"])}</a></h3>
-            <div class="vline"><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a>{date}</div>
+            <div class="top"><span class="no">{no:03d}</span><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}{date}</a></div>
+            <h3><a href="{e(p["readme"])}" data-cur="README">{pretty_name(p["name"])}</a></h3>
             <p>{e(p["desc"])}</p>
-            <a class="doc" href="{e(p["readme"])}">説明・パラメータ →</a>
-            <div class="actions">{try_btn}{files}</div>
+            {try_btn}
+            {files_html(p, released)}
           </div>
         </article>"""
 
 
-def plugin_item(p, released):
-    """画像の無いプラグイン：詰めた一覧の 1 行"""
-    if released:
-        files = (f'<a class="mini" href="{e(p["download"])}/{e(p["stem"])}.aex" title="Windows：{e(p["stem"])}.aex">'
-                 f'{ICON_WIN}Win{size_tag(p["aex_size"])}{ICON_DL}</a>'
-                 f'<a class="mini" href="{e(p["download"])}/{e(p["stem"])}.plugin.zip" title="macOS：{e(p["stem"])}.plugin.zip">'
-                 f'{ICON_MAC}Mac{size_tag(p["zip_size"])}{ICON_DL}</a>')
-    else:
-        files = '<span class="soon">準備中</span>'
+def plugin_item(p, released, no):
+    """画像の無いプラグイン：一覧の 1 マス"""
     return f"""
-        <article class="item" data-q="{e(search_key(p))}">
-          <h3><a href="{e(p["readme"])}">{e(p["name"])}</a><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a></h3>
+        <article class="item rv" data-q="{e(search_key(p))}">
+          <div class="top"><span class="no">{no:03d}</span><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a></div>
+          <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{pretty_name(p["name"])}</a></h3>
           <p>{e(p["desc"])}</p>
-          <div class="row"><a class="doc" href="{e(p["readme"])}" title="説明・パラメータ">説明 →</a>{files}</div>
+          {files_html(p, released)}
         </article>"""
 
 
-def collection(c):
+def collection(c, i, n, start):
     released = c["release"] is not None
     big = [p for p in c["plugins"] if p["image"] or p["try"]]
     small = [p for p in c["plugins"] if not (p["image"] or p["try"])]
-    body = ""
+    body, no = "", start
     if big:
-        body += '\n      <div class="grid">' + "".join(plugin_card(p, released) for p in big) + "\n      </div>"
+        body += '\n      <div class="grid">'
+        for p in big:
+            no += 1
+            body += plugin_card(p, released, no)
+        body += "\n      </div>"
     if small:
-        body += '\n      <div class="list">' + "".join(plugin_item(p, released) for p in small) + "\n      </div>"
-    return f'\n    <section class="col" id="{e(c["id"])}">\n      {collection_head(c)}{body}\n    </section>'
-
-
-INSTALL = f"""
-  <section class="install" id="install">
-    <h2>インストール</h2>
-    <p>インストーラーで、そのコレクションのプラグインがまとめて入ります。先に After Effects を終了しておいてください。</p>
-    <div class="steps">
-      <div class="step">
-        <h3>{ICON_WIN}Windows</h3>
-        <ol>
-          <li><code>…-windows-setup.exe</code> を実行する</li>
-          <li>「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」を押す（署名していないため）</li>
-          <li><code>C:\\Program Files\\Adobe\\Common\\Plug-ins\\7.0\\MediaCore\\</code> の中に入る</li>
-        </ol>
-        <p class="sub">アンインストールは「設定 → アプリ → インストールされているアプリ」から。</p>
-      </div>
-      <div class="step">
-        <h3>{ICON_MAC}macOS</h3>
-        <ol>
-          <li><code>…-macos.pkg</code> を開く</li>
-          <li>最初は開けないので、システム設定 → プライバシーとセキュリティ の「このまま開く」を押してから、もう一度開く</li>
-          <li><code>/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/</code> の中に入る</li>
-        </ol>
-        <p class="sub">アンインストールは、そのフォルダーの中の <code>.plugin</code> を消します。</p>
-      </div>
-    </div>
-    <details>
-      <summary>アップデート・プラグインを 1 つだけ入れるとき</summary>
-      <ul>
-        <li>アップデート：新しいリリースのインストーラーをそのまま実行すると上書きされます。</li>
-        <li>1 つだけ入れる・前の版に戻す：各プラグインの Win / Mac ボタンのファイルを使います。Windows は <code>.aex</code> を、macOS は <code>.plugin.zip</code> を解凍した <code>.plugin</code> を、上の MediaCore の中のフォルダーにコピーします。</li>
-      </ul>
-    </details>
-  </section>"""
+        body += '\n      <div class="list">'
+        for p in small:
+            no += 1
+            body += plugin_item(p, released, no)
+        body += "\n      </div>"
+    return f'\n    <section class="col" id="{e(c["id"])}">\n      {collection_head(c, i, n)}{body}\n    </section>'
 
 
 def render(collections):
+    css = (ASSETS / "style.css").read_text(encoding="utf-8")
+    js = (ASSETS / "main.js").read_text(encoding="utf-8")
     for c in collections:
         c["id"] = c["title"].lower()
     total = sum(len(c["plugins"]) for c in collections)
-    cols = "".join(collection(c) for c in collections)
-    jump = "".join(f'<a href="#{e(c["id"])}">{e(c["title"])}<span>{len(c["plugins"])}</span></a>' for c in collections)
+    n = len(collections)
+    cols, start = "", 0
+    for i, c in enumerate(collections, 1):
+        cols += collection(c, i, n, start)
+        start += len(c["plugins"])
+    jump = "".join(f'<a href="#{e(c["id"])}" data-cur="JUMP">{e(c["title"])}<span>{len(c["plugins"])}</span></a>'
+                   for c in collections)
+    names = "".join(f'<span>{e(p["name"])}</span><i>■</i>' for c in collections for p in c["plugins"])
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -504,30 +287,35 @@ def render(collections):
 <meta name="description" content="After Effects 用プラグイン JK-Plugins・fs-rs のダウンロード">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>{CSS}</style>
+<link href="{FONTS}" rel="stylesheet">
+<style>{css}</style>
 </head>
 <body>
 <div class="wrap">
-  <nav class="top"><span class="logo">JK-Plugins</span><span class="links"><a href="#install">インストール</a><a href="https://github.com/{SELF}">{ICON_GH}GitHub</a></span></nav>
+  <nav class="top mono"><span class="logo"><i></i>JK—PLUGINS</span><a href="https://github.com/{SELF}" data-cur="GITHUB">GITHUB ↗</a></nav>
   <header class="hero">
-    <h1>JK-Plugins</h1>
-    <p>Rust で書いた After Effects プラグイン。Windows・macOS 対応、無料。</p>
-    <div class="stats"><span class="stat"><b>{total}</b>プラグイン</span><span class="stat"><b>{len(collections)}</b>コレクション</span></div>
+    <div class="hero-meta mono"><span>AFTER EFFECTS PLUG-INS</span><span>WRITTEN IN RUST</span><span>WINDOWS / MACOS</span><span>FREE</span></div>
+    {px("h1", "JK-Plugins", attrs=" data-fit")}
+    <div class="hero-foot">
+      <p class="lead">Rust で書いた After Effects プラグイン。<br>Windows・macOS 対応、無料。</p>
+      <div class="stats mono"><div><b>{total}</b><span>PLUGINS</span></div><div><b>{n:02d}</b><span>COLLECTIONS</span></div></div>
+    </div>
   </header>
-  <div id="sentinel"></div>
+  <div class="marquee" aria-hidden="true"><div class="mq-track">{names}{names}</div></div>
   <div class="bar"><div class="bar-in">
-    <label class="search">{ICON_SEARCH}<input id="q" type="search" placeholder="プラグインを探す（名前・説明）" autocomplete="off" aria-label="プラグインを探す"><kbd>/</kbd></label>
-    <div class="jump">{jump}<a href="#install">インストール</a></div>
+    <label class="search">{ICON_SEARCH}<input id="q" type="search" placeholder="SEARCH — 名前・説明で探す" autocomplete="off" aria-label="プラグインを探す"><kbd>/</kbd></label>
+    <span class="count mono"><b id="count">{total:03d}</b> / {total:03d}</span>
+    <div class="jump mono">{jump}</div>
   </div></div>
 {cols}
-  <p class="empty" id="empty" hidden>見つかりませんでした</p>
-{INSTALL}
-  <footer>
-    {"".join(f'<a href="https://github.com/{c["repo"]}">GitHub: {e(c["title"])}</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告</a>
+  <p class="empty mono" id="empty" hidden>NO RESULTS — 見つかりませんでした</p>
+  <footer class="mono">
+    {px("div", "JK-Plugins")}
+    {"".join(f'<a href="https://github.com/{c["repo"]}">GITHUB: {e(c["title"])} ↗</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告 ↗</a>
   </footer>
 </div>
-<script>{JS}</script>
+<div class="readout" aria-hidden="true">SCROLL <b>000</b>%</div>
+<script>{js}</script>
 </body>
 </html>
 """
