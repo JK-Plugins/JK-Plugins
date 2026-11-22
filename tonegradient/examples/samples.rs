@@ -264,6 +264,24 @@ fn cases() -> Vec<Case> {
         dot(),
     ));
 
+    // Interpolation（色の混ぜ方）
+    for (label, interp) in [
+        ("Classic", Interpolation::Classic),
+        ("Linear", Interpolation::Linear),
+        ("Perceptual", Interpolation::Perceptual),
+    ] {
+        v.push(case(
+            "06_interpolation",
+            label,
+            Settings {
+                width: 120.0,
+                interpolation: interp,
+                ..b()
+            },
+            smooth(),
+        ));
+    }
+
     // Mid Color（3つ目の色としてグラデーションに入る。テクスチャも同じようにかかる）
     let mid = |amount: f32, width: f32, pos: MidPosition| Settings {
         mid_color: [1.0, 0.55, 0.45],

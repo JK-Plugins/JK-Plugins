@@ -20,7 +20,7 @@ const P_ROUGH_SCALE: usize = 9;
 const P_MID_AMOUNT: usize = 10;
 const P_MID_R: usize = 11;
 const P_MID_WIDTH: usize = 14;
-// 15 は使わない（Mid Position はプラグインと同じく Core で固定）
+const P_INTERP: usize = 15;
 const P_OUTPUT: usize = 16;
 const P_TEX_KIND: usize = 17;
 const P_CELL: usize = 18;
@@ -79,6 +79,11 @@ fn settings(p: &[f32], colors: &[f32]) -> Settings {
         mid_amount: if mid_on { p[P_MID_AMOUNT].clamp(0.0, 1.0) } else { 0.0 },
         mid_color: [p[P_MID_R], p[P_MID_R + 1], p[P_MID_R + 2]],
         mid_width: p[P_MID_WIDTH].clamp(0.0, 1.0),
+        interpolation: match p[P_INTERP] as u32 {
+            1 => Interpolation::Linear,
+            2 => Interpolation::Perceptual,
+            _ => Interpolation::Classic,
+        },
         output: if flag(p[P_OUTPUT]) { OutputMode::Gradient } else { OutputMode::Result },
         ..Default::default()
     }

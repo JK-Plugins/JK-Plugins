@@ -6,7 +6,7 @@ struct Params {
     use_tex: u32, kind: u32, map_mode: u32, curve: u32,
     output: u32, mid_core: u32, rough_seed: u32, tex_seed: u32,
     octaves: u32, dot_shape: u32, invert: u32, layer_w: u32,
-    layer_h: u32, layer_ox: i32, layer_oy: i32, _p0: u32,
+    layer_h: u32, layer_ox: i32, layer_oy: i32, interp: u32,
     ox: f32, oy: f32, soft: f32, mid_exp: f32,
     rough_sc: f32, power: f32, amount: f32, mid_amount: f32,
     roughness: f32, cos_a: f32, sin_a: f32, inv_cell: f32,
@@ -29,6 +29,35 @@ struct Params {
 @group(0) @binding(5) var<storage, read_write> out_px: array<vec4<f32>>;
 
 const NONE: u32 = 255u;
+
+// 補間の色空間から sRGB の値に戻す（process.rs の Interpolation::decode と同じ）
+fn linear_to_srgb(v: f32) -> f32 {
+    let a = abs(v);
+    var e = a * 12.92;
+    if (a > 0.0031308) {
+        e = 1.055 * pow(a, 1.0 / 2.4) - 0.055;
+    }
+    return select(e, -e, v < 0.0);
+}
+
+fn decode_interp(v: vec3<f32>) -> vec3<f32> {
+    if (P.interp == 1u) {
+        return vec3<f32>(linear_to_srgb(v.x), linear_to_srgb(v.y), linear_to_srgb(v.z));
+    }
+    if (P.interp == 2u) {
+        let l = v.x + 0.3963377774 * v.y + 0.2158037573 * v.z;
+        let m = v.x - 0.1055613458 * v.y - 0.0638541728 * v.z;
+        let s = v.x - 0.0894841775 * v.y - 1.2914855480 * v.z;
+        let l3 = l * l * l;
+        let m3 = m * m * m;
+        let s3 = s * s * s;
+        let r = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        let b = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+        return vec3<f32>(linear_to_srgb(r), linear_to_srgb(g), linear_to_srgb(b));
+    }
+    return v;
+}
 const CDF_BINS: u32 = 4096u;
 const LUT_OFF: u32 = 4097u;
 const LUT_SIZE: u32 = 256u;
@@ -433,5 +462,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         c = c + col * frac[j];
     }
-    out_px[i] = vec4<f32>(c, 1.0);
+    out_px[i] = vec4<f32>(decode_interp(c), 1.0);
 }

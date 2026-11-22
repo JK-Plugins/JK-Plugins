@@ -52,6 +52,80 @@ pub enum OutputMode {
     Gradient,
 }
 
+/// 色の混ぜ方（グラデーションの補間）
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interpolation {
+    /// 受け取った RGB の値をそのまま混ぜる（従来どおり）
+    Classic,
+    /// sRGB をリニア（光の強さ）に直して混ぜる
+    Linear,
+    /// Oklab（人の見え方に近い色空間）で混ぜる
+    Perceptual,
+}
+
+fn srgb_to_linear(v: f32) -> f32 {
+    let a = v.abs();
+    let l = if a <= 0.04045 {
+        a / 12.92
+    } else {
+        ((a + 0.055) / 1.055).powf(2.4)
+    };
+    l.copysign(v)
+}
+
+fn linear_to_srgb(v: f32) -> f32 {
+    let a = v.abs();
+    let e = if a <= 0.0031308 {
+        a * 12.92
+    } else {
+        1.055 * a.powf(1.0 / 2.4) - 0.055
+    };
+    e.copysign(v)
+}
+
+impl Interpolation {
+    /// RGB（sRGB の値）を混ぜるための色空間に移す
+    pub fn encode(self, rgb: [f32; 3]) -> [f32; 3] {
+        match self {
+            Interpolation::Classic => rgb,
+            Interpolation::Linear => rgb.map(srgb_to_linear),
+            Interpolation::Perceptual => {
+                let [r, g, b] = rgb.map(srgb_to_linear);
+                let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+                let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+                let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+                let (l, m, s) = (l.cbrt(), m.cbrt(), s.cbrt());
+                [
+                    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+                ]
+            }
+        }
+    }
+
+    /// `encode` の逆（混ぜた結果を RGB に戻す）
+    pub fn decode(self, v: [f32; 3]) -> [f32; 3] {
+        match self {
+            Interpolation::Classic => v,
+            Interpolation::Linear => v.map(linear_to_srgb),
+            Interpolation::Perceptual => {
+                let [ll, a, b] = v;
+                let l = ll + 0.3963377774 * a + 0.2158037573 * b;
+                let m = ll - 0.1055613458 * a - 0.0638541728 * b;
+                let s = ll - 0.0894841775 * a - 1.2914855480 * b;
+                let (l, m, s) = (l * l * l, m * m * m, s * s * s);
+                [
+                    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+                    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+                ]
+                .map(linear_to_srgb)
+            }
+        }
+    }
+}
+
 /// グループの1色
 #[derive(Clone, Copy, Debug)]
 pub struct GroupColor {
@@ -118,6 +192,8 @@ pub struct Settings {
     /// 中間色の帯の太さ（0..1）。1 で混ざっているところ全体、小さいほど境界の真ん中に寄る
     pub mid_width: f32,
     pub mid_position: MidPosition,
+    /// 色の混ぜ方
+    pub interpolation: Interpolation,
     pub output: OutputMode,
     /// 描画座標の原点（テクスチャが領域の切り出しで動かないようにする）
     pub origin: (i32, i32),
@@ -147,6 +223,7 @@ impl Default for Settings {
             mid_amount: 0.0,
             mid_width: 0.5,
             mid_position: MidPosition::Core,
+            interpolation: Interpolation::Classic,
             output: OutputMode::Result,
             origin: (0, 0),
         }
@@ -626,6 +703,11 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
     };
     let custom = (s.curve == Curve::Custom).then(|| CurveLut::new(&s.curve_points));
     let custom = &custom;
+    // 混ぜる色は補間の色空間に移しておき、混ぜた結果だけを戻す
+    let interp = s.interpolation;
+    let mixed: Vec<[f32; 3]> = s.colors.iter().map(|c| interp.encode(c.rgb)).collect();
+    let mixed = &mixed;
+    let mid_mixed = interp.encode(s.mid_color);
 
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -852,14 +934,15 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
                             let mut c = [0f32; 3];
                             for j in 0..me {
                                 let col = if j == m {
-                                    s.mid_color
+                                    mid_mixed
                                 } else {
-                                    s.colors[cl[j] as usize].rgb
+                                    mixed[cl[j] as usize]
                                 };
                                 for ch in 0..3 {
                                     c[ch] += col[ch] * frac[j];
                                 }
                             }
+                            let c = interp.decode(c);
                             changed.push((i as u32, [c[0], c[1], c[2], src[i][3]]));
                         }
                     }
@@ -1193,6 +1276,47 @@ mod tests {
     }
 
     /// prepare を使い回して shade だけやり直しても、毎回 process した結果と同じ
+    #[test]
+    fn interpolation_round_trips() {
+        for interp in [
+            Interpolation::Classic,
+            Interpolation::Linear,
+            Interpolation::Perceptual,
+        ] {
+            for rgb in [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [1.0, 0.0, 0.0], [0.2, 0.6, 0.9], [1.5, 0.3, 0.0]] {
+                let back = interp.decode(interp.encode(rgb));
+                for c in 0..3 {
+                    assert!((back[c] - rgb[c]).abs() < 1e-4, "{interp:?} {rgb:?} -> {back:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn interpolation_changes_the_middle() {
+        // 赤と緑の真ん中：Classic はそのまま平均、Linear は明るく、Perceptual は Classic より明るい
+        let (w, h) = (64, 4);
+        let src: Vec<[f32; 4]> = (0..w * h)
+            .map(|i| if i % w < w / 2 { [1.0, 0.0, 0.0, 1.0] } else { [0.0, 1.0, 0.0, 1.0] })
+            .collect();
+        let mid = |interp| {
+            let s = Settings {
+                colors: vec![GroupColor::new([1.0, 0.0, 0.0]), GroupColor::new([0.0, 1.0, 0.0])],
+                width: 40.0,
+                interpolation: interp,
+                ..Default::default()
+            };
+            let tex = Texture::new(TextureParams::default(), None);
+            let d = process(w, h, &src, &s, &tex).to_dense(&src);
+            d.rgba[w + w / 2]
+        };
+        let c = mid(Interpolation::Classic);
+        let l = mid(Interpolation::Linear);
+        let p = mid(Interpolation::Perceptual);
+        assert!(l[0] > c[0] + 0.1 && l[1] > c[1] + 0.1, "classic {c:?} linear {l:?}");
+        assert!(p[0] + p[1] > c[0] + c[1] + 0.1, "classic {c:?} perceptual {p:?}");
+    }
+
     #[test]
     fn shade_reuses_prepared() {
         let (w, h) = (64, 16);

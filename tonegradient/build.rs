@@ -79,7 +79,9 @@ fn main() {
                 OutFlags2::SupportsSmartRender |
                 OutFlags2::SupportsQueryDynamicFlags |
                 OutFlags2::SupportsThreadedRendering |
-                OutFlags2::SupportsGetFlattenedSequenceData
+                OutFlags2::SupportsGetFlattenedSequenceData |
+                // テクスチャのレイヤーの位置などをキャッシュのキーに混ぜる（PreRender の GuidMixInPtr に必要）
+                OutFlags2::IMixGuidDependencies
             ),
             Property::AE_Effect_Match_Name(EFFECT_NAME),
             Property::AE_Reserved_Info(8),
