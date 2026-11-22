@@ -24,6 +24,7 @@ jobs:
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       bundle_version: ${{ steps.plan.outputs.bundle_version }}
+      name: ${{ steps.plan.outputs.name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,6 +100,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.plan.outputs.tag }}
       VERSION: ${{ needs.plan.outputs.bundle_version }}
+      NAME: ${{ needs.plan.outputs.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -109,7 +111,7 @@ jobs:
           sha=$(jq -r .sha artifacts/plan/plan.json)
           gh release create "$TAG" \
             --target "$sha" \
-            --title "JK-Plugins $VERSION" \
+            --title "$NAME $VERSION" \
             --notes-file artifacts/plan/notes.md \
             --latest \
             artifacts/windows/* artifacts/macos/*
