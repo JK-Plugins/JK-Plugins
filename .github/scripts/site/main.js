@@ -1,7 +1,9 @@
 // 配布サイトの動き。site.py が index.html に埋め込む
 // - 検索（名前・説明・フォルダー名で絞り込み、/ キー、?q= で共有）
 // - ポスターがスクロールで下から出てくる。カーソルの方へ少し傾いて、光が当たる
-// - 表紙の文字と背景の大きな文字は、スクロールで違う速さで動く
+// - 表紙の文字とドットの網は、スクロールで違う速さで動く
+// - 背景：ラベルの 5 色のドットの網がゆっくり波打つ。カーソルの近くは粒が大きくなる
+// - 説明の改行を文節で（word-break: auto-phrase が無いブラウザは BudouX を読み込んで <wbr> を入れる）
 // - カーソルは丸。リンクの上では大きくなって「README」「↓ 180 KB」などを出す
 (() => {
   const root = document.documentElement;
@@ -43,6 +45,62 @@
   const init = new URLSearchParams(location.search).get('q');
   if (init) { q.value = init; runSearch(); }
 
+  /* ---------- 文節で改行（Chrome 以外） ---------- */
+  if (!(window.CSS && CSS.supports('word-break', 'auto-phrase'))) {
+    import('https://cdn.jsdelivr.net/npm/budoux@0.10.3/+esm').then(m => {
+      const parser = m.loadDefaultJapaneseParser();
+      document.querySelectorAll('.cap').forEach(el => parser.applyToElement(el));
+    }).catch(() => {});
+  }
+
+  /* ---------- 背景：ドットの網 ---------- */
+  const bg = document.querySelector('.bgfx');
+  const pointer = { x: -1e4, y: -1e4 };
+  if (bg) {
+    const g = bg.getContext('2d');
+    const css = getComputedStyle(root);
+    const pal = () => ['--c1', '--c2', '--c3', '--c4', '--c5'].map(v => css.getPropertyValue(v).trim());
+    let colors = pal(), W = 0, H = 0, dpr = 1;
+    const STEP = 22;
+    const size = () => {
+      dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+      bg.width = W * dpr; bg.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    size(); addEventListener('resize', size);
+    const dark = matchMedia('(prefers-color-scheme: dark)');
+    dark.addEventListener('change', () => { colors = pal(); });
+    let last = 0, visible = true;
+    document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) requestAnimationFrame(draw); });
+    function draw(now) {
+      if (!visible) return;
+      if (!RM) requestAnimationFrame(draw);
+      if (now - last < 33) return;          // 30fps で十分
+      last = now;
+      const t = RM ? 0 : now / 1000, sy = scrollY * 0.15;
+      g.clearRect(0, 0, W, H);
+      g.globalAlpha = dark.matches ? 0.3 : 0.22;
+      const oy = -(sy % STEP);
+      for (let y = oy; y < H + STEP; y += STEP) {
+        const wy = y + sy;
+        for (let x = STEP / 2; x < W; x += STEP) {
+          // 斜めに 5 色（帯の順）、ゆっくり流れる 2 つの波で粒の大きさを変える
+          const k = ((x * 0.6 + wy) / 260 + t * 0.05) % 5, ci = Math.floor((k + 5) % 5);
+          let r = 0.5 + 0.5 * Math.sin(x * 0.011 + t * 0.7) * Math.cos(wy * 0.009 - t * 0.5);
+          r = r * r * 4.2;
+          const dx = x - pointer.x, dy = y - pointer.y, d = Math.hypot(dx, dy);
+          if (d < 180) r += (1 - d / 180) * 5.5;
+          if (r < 0.35) continue;
+          g.fillStyle = colors[ci];
+          g.beginPath(); g.arc(x, y, Math.min(r, STEP * 0.45), 0, 6.283); g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+    }
+    requestAnimationFrame(draw);
+    addEventListener('pointermove', ev => { pointer.x = ev.clientX; pointer.y = ev.clientY; }, { passive: true });
+    if (RM) addEventListener('scroll', () => requestAnimationFrame(draw), { passive: true });
+  }
+
   if (RM) return;
 
   /* ---------- 出てくる（同じ行のものは少しずつずらす） ---------- */
@@ -58,14 +116,14 @@
   document.querySelectorAll('.rv').forEach(el => io.observe(el));
 
   /* ---------- 表紙のパララックス ---------- */
-  const hero = document.querySelector('.hero'), h1 = hero && hero.querySelector('h1'), ghost = hero && hero.querySelector('.ghost');
+  const hero = document.querySelector('.hero'), h1 = hero && hero.querySelector('h1'), ghost = hero && hero.querySelector('.dots');
   let ticking = false;
   const onScroll = () => {
     ticking = false;
     if (!hero) return;
     const y = Math.min(scrollY, hero.offsetHeight * 1.2);
     if (h1) h1.style.transform = `translate3d(0, ${y * 0.18}px, 0)`;
-    if (ghost) ghost.style.transform = `translate3d(${-y * 0.12}px, ${-y * 0.22}px, 0)`;
+    if (ghost) ghost.style.transform = `translate3d(0, ${y * 0.32}px, 0) rotate(${y * 0.04}deg)`;
   };
   addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
 

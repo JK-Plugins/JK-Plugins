@@ -80,9 +80,17 @@ def plugins_of(repo):
     return out
 
 
+_DATES = {}
+
+
 def release_date(repo, tag):
-    r = gh("release", "view", tag, "--repo", repo, "--json", "publishedAt", "-q", ".publishedAt", check=False)
-    return r.stdout.strip()[:10] if r.returncode == 0 and r.stdout.strip() else None
+    """そのタグのリリースの公開日（リポジトリのリリース一覧を 1 回だけ読んで引く）"""
+    if repo not in _DATES:
+        r = gh("api", f"repos/{repo}/releases?per_page=100", "--paginate",
+               "-q", ".[] | [.tag_name, .published_at] | @tsv", check=False)
+        _DATES[repo] = dict(line.split("\t", 1) for line in r.stdout.splitlines() if "\t" in line) if r.returncode == 0 else {}
+    d = _DATES[repo].get(tag)
+    return d[:10] if d else None
 
 
 def latest_release(repo):
@@ -211,8 +219,13 @@ def search_key(p):
     return " ".join([p["name"], p["desc"], p["dir"]])
 
 
-def sign(c, p):
-    return f'<div class="sign" title="{e(p["name"])}（{e(c["title"])}）">{MARK}</div>'
+BAND = '<div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>'
+
+
+def meta(p):
+    """リリース日と版"""
+    date = f'<div><dt>Release</dt><dd>{e(p["date"])}</dd></div>' if p["date"] else ""
+    return f'<dl class="meta">{date}<div><dt class="sr">Version</dt><dd>v{e(p["version"])}</dd></div></dl>'
 
 
 def poster_feature(c, p, released, no, wide=False):
@@ -228,11 +241,12 @@ def poster_feature(c, p, released, no, wide=False):
           {img}
           <div class="side">
           <p class="cap">{e(p["desc"])}</p>
+          {meta(p)}
           {try_btn}
-          {sign(c, p)}
           {files_html(p, released)}
           </div>
-          <span class="no">No. {no:03d} · v{e(p["version"])}</span>
+          {BAND}
+          <span class="no">No. {no:03d}</span>
         </article>"""
 
 
@@ -241,10 +255,11 @@ def poster(c, p, released, no):
     return f"""
         <article class="poster grain rv" data-q="{e(search_key(p))}">
           <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{e(short_name(p["name"]))}.</a></h3>
+          {BAND}
           <p class="cap">{e(p["desc"])}</p>
-          {sign(c, p)}
+          {meta(p)}
           {files_html(p, released)}
-          <span class="no">No. {no:03d} · v{e(p["version"])}</span>
+          <span class="no">No. {no:03d}</span>
         </article>"""
 
 
@@ -289,7 +304,8 @@ def render(collections):
 <div class="wrap">
   <nav class="top"><span class="logo">{MARK}JK-Plugins</span><a class="gh" href="https://github.com/{SELF}">{ICON_GH}GitHub</a></nav>
   <header class="hero grain">
-    <div class="ghost" aria-hidden="true">JK</div>
+    <div class="dots" aria-hidden="true"></div>
+    <div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     <h1><span class="b">Plugins</span><span class="i">for After Effects<span class="p">({total})</span></span></h1>
   </header>
   <div class="bar"><div class="bar-in">
@@ -303,6 +319,7 @@ def render(collections):
     {"".join(f'<a href="https://github.com/{c["repo"]}">GitHub: {e(c["title"])}</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告</a>
   </footer>
 </div>
+<canvas class="bgfx" aria-hidden="true"></canvas>
 <script>{js}</script>
 </body>
 </html>
