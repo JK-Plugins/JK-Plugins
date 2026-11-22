@@ -13,7 +13,8 @@ struct Params {
     tex_offx: f32, tex_offy: f32, dither: f32, contrast: f32,
     layer_scale: f32, layer_black: f32, layer_white: f32, cdf_min: f32,
     cdf_inv_range: f32, aspect: f32, mid_r: f32, mid_g: f32,
-    mid_b: f32, _p1: f32, _p2: f32, _p3: f32,
+    mid_b: f32, lx_a: f32, lx_b: f32, lx_c: f32,
+    lx_d: f32, lx_e: f32, lx_f: f32, _p4: f32,
 }
 
 @group(0) @binding(0) var<storage, read> P: Params;
@@ -123,10 +124,25 @@ fn cdf_eval(v: f32) -> f32 {
     return tables[b] + (tables[b + 1u] - tables[b]) * f;
 }
 
+// 端は端の値を伸ばす（繰り返さない）
 fn layer_at(xi: i32, yi: i32) -> f32 {
-    let x = rem_e(xi, i32(P.layer_w));
-    let y = rem_e(yi, i32(P.layer_h));
+    let x = clamp(xi, 0, i32(P.layer_w) - 1);
+    let y = clamp(yi, 0, i32(P.layer_h) - 1);
     return tables[LAYER_OFF + u32(y) * P.layer_w + u32(x)];
+}
+
+// Layer テクスチャの画素の座標。テクスチャのレイヤーの位置・スケール・回転に合わせる（texture.rs の layer_uv）
+fn layer_uv(x: f32, y: f32) -> vec2<f32> {
+    return vec2<f32>(P.lx_a * x + P.lx_b * y + P.lx_c, P.lx_d * x + P.lx_e * y + P.lx_f);
+}
+
+// この位置にテクスチャがあるか（Layer は画像の範囲の中だけ。texture.rs の covers）
+fn tex_covers(x: f32, y: f32) -> bool {
+    if (P.kind != 6u) {
+        return true;
+    }
+    let uv = layer_uv(x, y);
+    return uv.x >= -0.5 && uv.y >= -0.5 && uv.x < f32(P.layer_w) - 0.5 && uv.y < f32(P.layer_h) - 0.5;
 }
 
 // テクスチャのしきい値 0..1（texture.rs の threshold と同じ）
@@ -161,9 +177,9 @@ fn tex_t(x: f32, y: f32) -> f32 {
         let e = max(P.dither, 0.25);
         t = hash_f(i32(floor((x - P.tex_offx) / e)), i32(floor((y - P.tex_offy) / e)), P.tex_seed);
     } else if (k == 6u) {
-        let sc = max(P.layer_scale, 0.01);
-        let u = (x - P.tex_offx) / sc - 0.5 - f32(P.layer_ox);
-        let v = (y - P.tex_offy) / sc - 0.5 - f32(P.layer_oy);
+        let uv = layer_uv(x, y);
+        let u = uv.x;
+        let v = uv.y;
         let u0 = floor(u);
         let v0 = floor(v);
         let fu = u - u0;
@@ -321,7 +337,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let me = select(m, m + 1u, mid > 0.0);
 
     var frac = ew;
-    if (P.use_tex != 0u) {
+    // Layer テクスチャは画像の範囲の中だけ（外側はなめらかなグラデーションのまま）
+    if (P.use_tex != 0u && tex_covers(gx, gy)) {
         // 並び順の大きい色から積み上げる（挿入ソート）
         var order: array<u32, 8>;
         for (var j = 0u; j < m; j = j + 1u) {

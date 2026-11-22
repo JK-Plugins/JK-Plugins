@@ -603,6 +603,11 @@ fn main() {
                 height: H,
                 value: &pap,
                 origin: (0, 0),
+                // 紙の画像をレイヤーと同じ位置に置く（Texture Size 8 で 1倍）
+                xform: {
+                    let k = 1.0 / c.t.layer_scale.max(0.01);
+                    [k, 0.0, -0.5, 0.0, k, -0.5]
+                },
             })
         } else {
             None

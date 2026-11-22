@@ -32,7 +32,7 @@
 | Output | Result / Gradient (check)：テクスチャ前の色の並び（番号の重み付き平均）をグレーで確認 |
 | Width | グラデーション全体の幅（px）。境界の両側に半分ずつ |
 | Texture | Smooth / Dot / Line / Bayer / Grain / Noise / Layer |
-| Texture Layer | Texture が Layer のときに使うレイヤー（レイヤー全体を1枚としてタイル状に繰り返す） |
+| Texture Layer | Texture が Layer のときに使うレイヤー。コンポジションでのそのレイヤーの位置・スケール・回転（親レイヤーも含む、2D のみ）どおりに1枚だけ重ねる（繰り返さない）。レイヤーの外側はテクスチャをかけない。レイヤーは非表示（目のアイコンをオフ）にしておいてよい |
 | Texture Mode | Threshold（初期値）：テクスチャの値と色の割合を比べて色を選ぶ（網点のように2色に分かれる）／ Map：テクスチャの濃淡で混ざり具合を連続的にずらす（2値にならない。Amount が強さ。平均の色の割合と両端は変わらない） |
 | Amount | テクスチャの効き（0% でなめらかなグラデーション） |
 | Animate Seed | フレームごとに Seed を変える（砂目・ノイズ・荒らしが毎フレーム変わる） |
@@ -86,9 +86,9 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 | 名前 | 内容 |
 |---|---|
 | Softness | 網点や粒のふちをぼかす幅（px、Threshold のとき）。0 でくっきり。その場所でのテクスチャの変化に合わせて、ふちだけを指定の幅でなめらかにする（網点の中と外の色は変わらない）。どの値でも色の割合は変わらない |
-| Texture Size | テクスチャの大きさ。8 が標準：Dot・Line の周期とノイズの粒は 8px、Bayer・Grain の1粒は 1px（Size ÷ 8）、Layer は 100%（Size ÷ 8 倍） |
+| Texture Size | テクスチャの大きさ。8 が標準：Dot・Line の周期とノイズの粒は 8px、Bayer・Grain の1粒は 1px（Size ÷ 8）。Layer では使わない（テクスチャのレイヤーのスケールに合わせる） |
 | Angle | 角度（Dot / Line / Noise。Bayer・Grain は細かい粒を回すとモアレが出るので回転しない） |
-| Texture Position | テクスチャの基準の位置（コンポジションで点を動かすとテクスチャがずれる） |
+| Texture Position | テクスチャの基準の位置（コンポジションで点を動かすとテクスチャがずれる）。Layer では使わない（テクスチャのレイヤーの位置に合わせる） |
 | Dot Shape | Round / Circle / Ellipse / Square / Diamond。どの形でも面積率が色の割合と一致するよう補正済み |
 | Noise Detail | ノイズの細かさの重ね数（1〜6） |
 | Ellipse Aspect | 楕円の縦横比（Dot Shape が Ellipse のとき） |

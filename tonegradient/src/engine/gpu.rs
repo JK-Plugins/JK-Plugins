@@ -414,6 +414,8 @@ fn params_words(
     let (lw, lh, lox, loy) = v.layer.map_or((0, 0, 0, 0), |l| {
         (l.width as u32, l.height as u32, l.origin.0, l.origin.1)
     });
+    // Layer テクスチャの位置・スケール・回転（描画座標 → テクスチャの画素の座標）
+    let lx = v.layer.map_or([0.0; 6], |l| l.xform);
     let power = if s.curve == Curve::Custom {
         1.0
     } else {
@@ -471,8 +473,12 @@ fn params_words(
         s.mid_color[0],
         s.mid_color[1],
         s.mid_color[2],
-        0.0,
-        0.0,
+        lx[0],
+        lx[1],
+        lx[2],
+        lx[3],
+        lx[4],
+        lx[5],
         0.0,
     ];
     u.into_iter().chain(f.iter().map(|x| x.to_bits())).collect()
@@ -917,7 +923,9 @@ mod tests {
             width: 37,
             height: 23,
             value: &vals,
-            origin: (-5, 3),
+            origin: (0, 0),
+            // 少し回して拡大したレイヤー
+            xform: [0.55, 0.12, -9.3, -0.1, 0.6, 4.2],
         };
         compare(
             "layer",

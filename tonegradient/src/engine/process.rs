@@ -747,7 +747,8 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
 
                             // 最終的な各色の割合
                             let mut frac = ew;
-                            if use_tex {
+                            // Layer テクスチャは画像の範囲の中だけ（外側はなめらかなグラデーションのまま）
+                            if use_tex && texture.covers(gx, gy) {
                                 // 並び順の大きい色から積み上げる。中間色は Rim ならいちばん上の色のすぐ後
                                 // （網点のふちに出る）、Core なら先頭（網点の中心に出る）
                                 let mut order = [0usize; MAX_NEIGHBORS + 2];
