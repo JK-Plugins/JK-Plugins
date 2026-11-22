@@ -118,7 +118,11 @@ nav.top a.gh:hover { color: var(--ink); }
 .meta dd { margin: 0; color: #55534e; }
 .poster .no { position: absolute; right: 12px; top: 50%; writing-mode: vertical-rl; font: 400 9px/1 var(--sans); color: #b3b1aa;
   letter-spacing: .08em; transform: translateY(-50%); }
-.poster:hover { box-shadow: 0 2px 4px rgba(0, 0, 0, .05), 0 16px 36px rgba(0, 0, 0, .09); }
+/* カーソルの位置に当たる光（パネルの反射） */
+.poster::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s; z-index: 2;
+  background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .85), transparent 50%); mix-blend-mode: soft-light; }
+.poster:hover::before { opacity: 1; }
+.poster:hover { box-shadow: 0 2px 4px rgba(0, 0, 0, .05), 0 18px 40px rgba(0, 0, 0, .1); }
 
 /* 画像つき（大きいポスター） */
 .poster.feature { grid-column: span 2; grid-row: span 2; aspect-ratio: auto; padding: 8% 7% 5%; }
@@ -142,7 +146,7 @@ nav.top a.gh:hover { color: var(--ink); }
 .poster.feature.wide .side { grid-column: 2; grid-row: 2; align-items: flex-start; height: 100%; }
 .poster.feature.wide { padding-bottom: calc(4% + 30px); }
 .poster.feature.wide .cap { margin: 24px 0 0; }
-.try { display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; padding: 11px 22px; border-radius: 999px; background: #111; color: #fbfaf7;
+.try { display: inline-flex; align-items: center; gap: 8px; margin: 18px 0 22px; padding: 11px 22px; border-radius: 999px; background: #111; color: #fbfaf7;
   font-weight: 600; font-size: 14px; transition: transform .2s; }
 .try:hover { transform: translateY(-1px); opacity: .88; }
 .try svg { width: 12px; height: 12px; }
@@ -163,12 +167,8 @@ footer { margin-top: clamp(64px, 9vw, 120px); padding: 28px 0 56px; border-top: 
 footer .logo { font-weight: 600; letter-spacing: -.02em; font-size: 18px; color: var(--ink); margin-right: auto; display: inline-flex; gap: 8px; align-items: center; }
 footer a:hover { color: var(--ink); }
 
-/* 背景：無地に、カーソルの位置へ少し遅れてついてくる大きな柔らかい光（JS が --gx・--gy を動かす） */
-:root { --glow: rgba(255, 255, 255, .55); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --glow: rgba(255, 255, 255, .045); } }
-.glow { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .6s;
-  background: radial-gradient(520px circle at var(--gx, 50%) var(--gy, 30%), var(--glow), transparent 70%); }
-.glow.on { opacity: 1; }
+/* 背景：カーソルの通ったところに ASCII の文字の粒が散って消えていく（JS が描く。パネルの後ろ） */
+.trail { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
 
 /* 動き（JS が html に .fx をつけたときだけ） */
 .fx .rv { opacity: 0; transform: translateY(28px); }
