@@ -9,10 +9,10 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use super::curve::CurveLut;
+use super::spectral::Pigment;
 use super::process::{
-    biases, label_pixels, ranks, reach, widths, Curve, Interpolation, MidPosition, Output, OutputMode,
-    Settings,
-    TextureMode, MAX_NEIGHBORS, NONE,
+    biases, label_pixels, prepare, ranks, reach, widths, Curve, Interpolation, MidPosition, Output,
+    OutputMode, Settings, TextureMode, MAX_NEIGHBORS, NONE,
 };
 use super::texture::{DotShape, Texture, TextureKind};
 
@@ -296,7 +296,12 @@ impl Ctx {
         self.queue.write_buffer(&labels_b, 0, &labels);
         let ks: Vec<u32> = (0..nc).filter(|&k| present[k]).map(|k| k as u32).collect();
         let empty = ks.len() < 2;
-        if !empty {
+        if !empty && s.stop_at_lines {
+            // 壁を越えない距離は CPU で求めて、そのまま渡す（結果を CPU と同じにする）
+            let p = prepare(w, h, src, s);
+            self.queue
+                .write_buffer(&near, 0, &words_bytes(&p.gpu_near_words()));
+        } else if !empty {
             enc.clear_buffer(&near, 0, None);
             // 1色ぶんの作業用は 4 本（g・v・z・dd）。目安の大きさに収まるだけまとめる
             let per_color = n * 4 * 4 + h as u64 * 4;
@@ -450,6 +455,7 @@ fn params_words(
             Interpolation::Classic => 0,
             Interpolation::Linear => 1,
             Interpolation::Perceptual => 2,
+            Interpolation::Pigment => 3,
         },
     ];
     let mid = s.interpolation.encode(s.mid_color);
@@ -611,6 +617,15 @@ fn run<R>(
         // 混ぜる色は補間の色空間に移して渡す（シェーダーが混ぜた結果を戻す）
         let rgb = s.interpolation.encode(s.colors[k].rgb);
         cols.extend_from_slice(&[rgb[0], rgb[1], rgb[2], wid[k], bias[k], rank[k], 0.0, 0.0]);
+    }
+    // Pigment：色ごと（最後が中間色）に K/S 38 個・輝度・差 3 つを続けて置く（shade.wgsl の PIG_*）
+    if s.interpolation == Interpolation::Pigment {
+        for rgb in s.colors.iter().map(|c| c.rgb).chain(std::iter::once(s.mid_color)) {
+            let p = Pigment::new(rgb);
+            cols.extend_from_slice(&p.ks);
+            cols.push(p.lum);
+            cols.extend_from_slice(&p.resid);
+        }
     }
     let use_tex = texture.kind() != TextureKind::Smooth && s.amount > 0.0;
     let view = texture.gpu_view();
@@ -840,13 +855,28 @@ mod tests {
             ..Default::default()
         };
         compare("smooth", &base, tp(TextureKind::Smooth), None);
-        for interp in [Interpolation::Linear, Interpolation::Perceptual] {
+        let stop = Settings {
+            stop_at_lines: true,
+            ..base.clone()
+        };
+        compare("smooth stop", &stop, tp(TextureKind::Smooth), None);
+        compare("dot stop", &stop, tp(TextureKind::Dot), None);
+        for interp in [
+            Interpolation::Linear,
+            Interpolation::Perceptual,
+            Interpolation::Pigment,
+        ] {
             let s = Settings {
                 interpolation: interp,
                 mid_amount: 0.5,
                 ..base.clone()
             };
-            compare(&format!("smooth {interp:?}"), &s, tp(TextureKind::Smooth), None);
+            compare(
+                &format!("smooth {interp:?}"),
+                &s,
+                tp(TextureKind::Smooth),
+                None,
+            );
             compare(
                 &format!("dot map {interp:?}"),
                 &Settings {

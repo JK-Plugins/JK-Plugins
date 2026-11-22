@@ -102,6 +102,19 @@ def plugins():
     return out
 
 
+# 取り込んだもののライセンス表示（プラグインのフォルダーにあれば配布物に入れる）
+NOTICES = "THIRD_PARTY_NOTICES.txt"
+
+
+def notices_file(p):
+    f = ROOT / p["dir"] / NOTICES
+    return f if f.exists() else None
+
+
+def notices_name(p):
+    return f"{p['plugin_name']} - Third Party Notices.txt"
+
+
 def asset_stem(plugin):
     """ダウンロード用のファイル名（GitHub は空白を . に変えるのでハイフンにする）"""
     return plugin["plugin_name"].replace(" ", "-")
@@ -283,6 +296,11 @@ def cmd_package_windows(args):
             # zip は JK-Plugins フォルダーごと MediaCore にコピーできるようにする
             z.write(dll, f"{PLUGINS_SUBDIR}/{p['plugin_name']}.aex")
             shutil.copy2(dll, staged / f"{p['plugin_name']}.aex")
+            # 取り込んだもののライセンス表示があれば一緒に置く
+            notices = notices_file(p)
+            if notices:
+                z.write(notices, f"{PLUGINS_SUBDIR}/{notices_name(p)}")
+                shutil.copy2(notices, staged / notices_name(p))
             # 個別のファイル（GitHub は空白を . に変えるのでハイフンの名前）
             shutil.copy2(dll, out / f"{p['asset_stem']}.aex")
             print(f"built {p['plugin_name']}.aex")
@@ -367,6 +385,9 @@ def build_installer(plan, staged, out):
     for p in plan["plugins"]:
         src = (staged / f"{p['plugin_name']}.aex").resolve()
         lines.append(f'Source: "{src}"; DestDir: "{PLUGINS_DIR_WIN}"; Flags: ignoreversion')
+        if (staged / notices_name(p)).exists():
+            src = (staged / notices_name(p)).resolve()
+            lines.append(f'Source: "{src}"; DestDir: "{PLUGINS_DIR_WIN}"; Flags: ignoreversion')
     lines += ["", "[UninstallDelete]", f'Type: dirifempty; Name: "{PLUGINS_DIR_WIN}"']
     script = out / "installer.iss"
     # ISCC は BOM 付き UTF-8 を Unicode として読む
@@ -413,6 +434,9 @@ def build_bundle(p, target, out):
     )
     shutil.copy2(find_rsrc(target, p["crate"], triples[0]), bundle / "Contents" / "Resources" / f"{name}.rsrc")
     (bundle / "Contents" / "PkgInfo").write_text("eFKTFXTC", encoding="ascii")
+    notices = notices_file(p)
+    if notices:
+        shutil.copy2(notices, bundle / "Contents" / "Resources" / NOTICES)
     with open(bundle / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump(
             {

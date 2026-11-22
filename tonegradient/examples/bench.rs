@@ -41,8 +41,46 @@ fn main() {
         t.elapsed().as_secs_f64() * 1e3,
         p.memory_bytes() >> 20
     );
+    // Stop at Lines（線で止める）：黒い線を足した絵で測る
+    let lined: Vec<[f32; 4]> = src
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| {
+            let (x, y) = (i % w, i / w);
+            if x % 240 < 2 || (y + x / 3) % 180 < 2 {
+                [0.0, 0.0, 0.0, 1.0]
+            } else {
+                p
+            }
+        })
+        .collect();
+    for (name, img) in [("prepare stop", &src), ("prepare stop+lines", &lined)] {
+        let t = Instant::now();
+        let p = prepare(
+            w,
+            h,
+            img,
+            &Settings {
+                stop_at_lines: true,
+                ..base()
+            },
+        );
+        println!(
+            "{name:<18} {:>7.1} ms ({} MB)",
+            t.elapsed().as_secs_f64() * 1e3,
+            p.memory_bytes() >> 20
+        );
+    }
     let cases: Vec<(&str, Settings, TextureParams)> = vec![
         ("smooth", base(), TextureParams::default()),
+        (
+            "smooth pigment",
+            Settings {
+                interpolation: Interpolation::Pigment,
+                ..base()
+            },
+            TextureParams::default(),
+        ),
         (
             "dot",
             base(),
