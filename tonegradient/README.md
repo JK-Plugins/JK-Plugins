@@ -35,7 +35,6 @@
 | Texture Layer | Texture が Layer のときに使うレイヤー（レイヤー全体を1枚としてタイル状に繰り返す） |
 | Texture Mode | Threshold（初期値）：テクスチャの値と色の割合を比べて色を選ぶ（網点のように2色に分かれる）／ Map：テクスチャの濃淡で混ざり具合を連続的にずらす（2値にならない。Amount が強さ。平均の色の割合と両端は変わらない） |
 | Amount | テクスチャの効き（0% でなめらかなグラデーション） |
-| Draft | Off / When Layer Quality is Draft / Always。アンチエイリアスを省いて軽くする。初期値はレイヤーの画質スイッチが「ドラフト」のときだけ（レンダーキューの「最高画質」では効かない） |
 | Animate Seed | フレームごとに Seed を変える（砂目・ノイズ・荒らしが毎フレーム変わる） |
 
 ![Width](docs/samples/01_width.png)
@@ -69,20 +68,16 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 | Curve | Linear / Smooth / Custom |
 | Curve Graph | Curve が Custom のときに使うカーブのグラフ。クリックで点を追加（近くに点があればつかむ）、ドラッグで動かし、グラフの外までドラッグして離すと消える。両端 (0,0)・(1,1) は固定で、点の間は行き過ぎない単調な曲線でつなぐ（点は最大8個）。キーフレームも打てる（点の数が同じならなめらかに変わる） |
 | Curve Power | 1 でそのまま。大きいほど境界付近が急に、小さいほど端まで残る（Custom のときは使わない） |
-| Max Mix Colors | 1ピクセルが混ぜる近くの色の数（1〜6）。少ないと3色の接合部に継ぎ目が出る |
 
 ![Curve](docs/samples/02_curve.png)
 ![Offset / Reverse](docs/samples/05_offset_reverse.png)
-![Max Mix Colors](docs/samples/06_max_mix.png)
 
 ### Mid Color
 
 | 名前 | 内容 |
 |---|---|
-| Enable Mid Color | オフのときは計算しない |
-| Mid Color / Mid Amount | 色が混ざっているところに入れる3つ目の色と、その量（2色の境界の真ん中で最大）。上から重ねるのではなく、グラデーションの途中の色として扱うので、テクスチャ・Softness も同じようにかかる |
+| Mid Color / Mid Amount | 色が混ざっているところに入れる3つ目の色と、その量（初期値 0% = なし）（2色の境界の真ん中で最大）。上から重ねるのではなく、グラデーションの途中の色として扱うので、テクスチャ・Softness も同じようにかかる |
 | Mid Width | 中間色の帯の太さ。100% で混ざっているところ全体、小さいほど境界の真ん中に寄る（初期値 50%） |
-| Mid Position | Core（網点の中心に中間色の網点として出る、初期値）／ Rim（網点のふちに輪のように出る） |
 
 ![Mid Color](docs/samples/07_mid_color.png)
 
@@ -90,20 +85,16 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 
 | 名前 | 内容 |
 |---|---|
-| Enable Texture | オフのときは Smooth と同じ（テクスチャを計算しない） |
 | Softness | 網点や粒のふちをぼかす幅（px、Threshold のとき）。0 でくっきり。その場所でのテクスチャの変化に合わせて、ふちだけを指定の幅でなめらかにする（網点の中と外の色は変わらない）。どの値でも色の割合は変わらない |
-| Cell Size | 網点・線の周期、ノイズの粒の大きさ（px）。Dot / Line / Noise |
+| Texture Size | テクスチャの大きさ。8 が標準：Dot・Line の周期とノイズの粒は 8px、Bayer・Grain の1粒は 1px（Size ÷ 8）、Layer は 100%（Size ÷ 8 倍） |
 | Angle | 角度（Dot / Line / Noise。Bayer・Grain は細かい粒を回すとモアレが出るので回転しない） |
-| Offset X / Y | テクスチャの位置ずらし（px） |
+| Texture Position | テクスチャの基準の位置（コンポジションで点を動かすとテクスチャがずれる） |
 | Dot Shape | Round / Circle / Ellipse / Square / Diamond。どの形でも面積率が色の割合と一致するよう補正済み |
+| Noise Detail | ノイズの細かさの重ね数（1〜6） |
 | Ellipse Aspect | 楕円の縦横比（Dot Shape が Ellipse のとき） |
-| Dither Size | Bayer・Grain の1粒の大きさ（px） |
-| Noise Detail / Noise Contrast | ノイズの細かさの重ね数（1〜6）とコントラスト |
 | Layer Channel | Luminance / Alpha / Red / Green / Blue |
-| Layer Scale | レイヤーの拡大率（バイリニア補間） |
-| Layer Black / White | レベル補正（この範囲を 0〜1 に引き伸ばす） |
-| Invert / Seed | Seed は Grain・Noise |
-| Antialias | Off（初期値）/ 2x2 / 4x4 / 8x8（サブピクセルのサンプル数。Draft のときは Off） |
+| Invert / Seed | Seed は Grain・Noise と Roughness の乱数の種 |
+| Antialias | Off（初期値）/ 2x2 / 4x4 / 8x8（サブピクセルのサンプル数）。レイヤーの画質が「ドラフト」のときは自動で Off |
 
 ![Softness](docs/samples/18_softness.png)
 ![Texture Mode](docs/samples/20_texture_mode.png)
@@ -111,7 +102,7 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 ![Amount](docs/samples/09_amount.png)
 ![Dot Shape](docs/samples/10_dot_shape.png)
 ![Cell / Angle / Offset](docs/samples/11_cell_angle_offset.png)
-![Dither Size](docs/samples/12_dither_size.png)
+![Texture Size (Bayer)](docs/samples/12_dither_size.png)
 ![Noise](docs/samples/13_noise.png)
 ![Layer](docs/samples/14_layer.png)
 ![Antialias](docs/samples/15_antialias.png)
@@ -120,8 +111,7 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 
 | 名前 | 内容 |
 |---|---|
-| Enable Roughness | オフのときは計算しない |
-| Rough Amount / Scale / Seed | 色ごとに別のノイズで境界の位置をずらして荒らす（旧ディスプレイスメント相当） |
+| Rough Amount / Rough Scale | 色ごとに別のノイズで境界の位置をずらして荒らす（0 で無効）。乱数の種は Texture Settings の Seed |
 
 ![Roughness](docs/samples/16_roughness.png)
 
@@ -182,7 +172,7 @@ python tools/aexcompat_check.py <AEXCompat のリポジトリ> <tonegradient.aex
 
 - グループ外の色（線など）を挟んでいても、Width の範囲内に別のグループ色があればグラデーションがかかる（線のピクセル自体は変えない）
 - Grow・Offset を入れると、境界の位置に合わせてグラデーションの幅も少し変わる
-- 距離変換の結果はキャッシュしている（入力と、色の判定・届く距離・Max Mix Colors が同じなら再利用）。
+- 距離変換の結果はキャッシュしている（入力と、色の判定・届く距離が同じなら再利用）。
   テクスチャ・Amount・Curve・Mid Color などだけを変えたときは距離変換を飛ばす。
   4色・1920×1080・Width 60 の目安（20スレッドの環境）：準備（ラベル付け・距離変換）約30ms、
   色の合成 約9〜17ms（Antialias 4x4 では約45〜60ms）。キャッシュが当たると準備を飛ばす。

@@ -11,8 +11,8 @@ mod curve_ui;
 use curve_ui::CurveData;
 
 use crate::engine::{
-    self, Curve, DotShape, GroupColor, LayerTexture, MidPosition, OutputMode, Prepared, Settings,
-    Texture, TextureKind, TextureMode, TextureParams,
+    self, Curve, DotShape, GroupColor, LayerTexture, OutputMode, Prepared, Settings, Texture,
+    TextureKind, TextureMode, TextureParams,
 };
 
 /// 距離変換まで済ませた途中結果のキャッシュ（新しい順）。
@@ -81,7 +81,6 @@ enum Params {
     TexLayer,
     TexMode,
     Amount,
-    Draft,
     AnimateSeed,
 
     // --- Color Select ---
@@ -106,35 +105,25 @@ enum Params {
     CurveType,
     CurveGraph,
     CurvePower,
-    MaxNeighbors,
     GradEnd,
 
     // --- Mid Color ---
     MidStart,
-    MidEnable,
     MidColor,
     MidAmount,
     MidWidth,
-    MidPositionType,
     MidEnd,
 
     // --- Texture Settings ---
     TexStart,
-    TexEnable,
     Softness,
-    CellSize,
+    TexSize,
     Angle,
-    TexOffsetX,
-    TexOffsetY,
+    TexPosition,
     DotShapeType,
     Aspect,
-    DitherSize,
     Octaves,
-    NoiseContrast,
     LayerChannel,
-    LayerScale,
-    LayerBlack,
-    LayerWhite,
     Invert,
     Seed,
     AaSamples,
@@ -142,10 +131,8 @@ enum Params {
 
     // --- Roughness ---
     RoughStart,
-    RoughEnable,
     Roughness,
     RoughScale,
-    RoughSeed,
     RoughEnd,
 }
 
@@ -153,7 +140,6 @@ const TEXTURE_OPTIONS: [&str; 7] = ["Smooth", "Dot", "Line", "Bayer", "Grain", "
 const DOT_OPTIONS: [&str; 5] = ["Round", "Circle", "Ellipse", "Square", "Diamond"];
 const AA_OPTIONS: [&str; 4] = ["Off", "2x2", "4x4", "8x8"];
 const CHANNEL_OPTIONS: [&str; 5] = ["Luminance", "Alpha", "Red", "Green", "Blue"];
-const DRAFT_OPTIONS: [&str; 3] = ["Off", "When Layer Quality is Draft", "Always"];
 
 fn texture_kind(popup: i32) -> TextureKind {
     match popup {
@@ -307,8 +293,6 @@ impl AdobePluginGlobal for Plugin {
             ae::ParamUIFlags::empty(),
         )?;
         params.add(Params::Amount, "Amount", percent_slider(100.0))?;
-        // 重い処理を省いてプレビューを軽くする
-        params.add(Params::Draft, "Draft", popup(&DRAFT_OPTIONS, 2))?;
         // フレームごとに Seed を変える（砂目・ノイズ・荒らしが毎フレーム動く）
         params.add(Params::AnimateSeed, "Animate Seed", checkbox(false))?;
 
@@ -434,11 +418,6 @@ impl AdobePluginGlobal for Plugin {
                     "Curve Power",
                     float_slider(1.0, (0.05, 20.0), (0.25, 4.0), 2),
                 )?;
-                params.add(
-                    Params::MaxNeighbors,
-                    "Max Mix Colors",
-                    int_slider(4, 1, engine::MAX_NEIGHBORS as i32),
-                )?;
                 Ok(())
             },
         )?;
@@ -450,13 +429,6 @@ impl AdobePluginGlobal for Plugin {
             "Mid Color",
             true,
             |params| {
-                params.add_with_flags(
-                    Params::MidEnable,
-                    "Enable Mid Color",
-                    checkbox(false),
-                    SUPERVISE,
-                    ae::ParamUIFlags::empty(),
-                )?;
                 params.add(
                     Params::MidColor,
                     "Mid Color",
@@ -470,15 +442,10 @@ impl AdobePluginGlobal for Plugin {
                         f.set_value(f.default());
                     }),
                 )?;
-                params.add(Params::MidAmount, "Mid Amount", percent_slider(50.0))?;
+                // 0% で中間色なし
+                params.add(Params::MidAmount, "Mid Amount", percent_slider(0.0))?;
                 // 中間色の帯の太さ（100% で混ざっているところ全体、小さいほど真ん中に寄る）
                 params.add(Params::MidWidth, "Mid Width", percent_slider(50.0))?;
-                // テクスチャのどこに中間色を置くか（網点のふち／網点の中心）
-                params.add(
-                    Params::MidPositionType,
-                    "Mid Position",
-                    popup(&["Rim", "Core"], 2),
-                )?;
                 Ok(())
             },
         )?;
@@ -490,23 +457,18 @@ impl AdobePluginGlobal for Plugin {
             "Texture Settings",
             true,
             |params| {
-                params.add_with_flags(
-                    Params::TexEnable,
-                    "Enable Texture",
-                    checkbox(true),
-                    SUPERVISE,
-                    ae::ParamUIFlags::empty(),
-                )?;
                 // 網点や粒のふちをぼかす幅（px）。0 でくっきり
                 params.add(
                     Params::Softness,
                     "Softness",
                     float_slider(0.0, (0.0, 100.0), (0.0, 10.0), 1),
                 )?;
+                // テクスチャの大きさ。8 が標準：Dot・Line の周期とノイズの粒は 8px、
+                // Bayer・Grain の1粒は 1px、Layer は 100%
                 params.add(
-                    Params::CellSize,
-                    "Cell Size",
-                    float_slider(8.0, (1.0, 1000.0), (2.0, 64.0), 1),
+                    Params::TexSize,
+                    "Texture Size",
+                    float_slider(8.0, (0.5, 1000.0), (1.0, 64.0), 1),
                 )?;
                 params.add(
                     Params::Angle,
@@ -516,15 +478,14 @@ impl AdobePluginGlobal for Plugin {
                         f.set_value(f.default());
                     }),
                 )?;
+                // テクスチャの基準の位置（コンポジションで点を動かすとテクスチャがずれる）
                 params.add(
-                    Params::TexOffsetX,
-                    "Offset X",
-                    float_slider(0.0, (-10000.0, 10000.0), (-64.0, 64.0), 1),
-                )?;
-                params.add(
-                    Params::TexOffsetY,
-                    "Offset Y",
-                    float_slider(0.0, (-10000.0, 10000.0), (-64.0, 64.0), 1),
+                    Params::TexPosition,
+                    "Texture Position",
+                    ae::PointDef::setup(|f| {
+                        f.set_default((50.0, 50.0));
+                        f.set_restrict_bounds(false);
+                    }),
                 )?;
                 params.add_with_flags(
                     Params::DotShapeType,
@@ -538,32 +499,15 @@ impl AdobePluginGlobal for Plugin {
                     "Ellipse Aspect",
                     float_slider(2.0, (0.05, 20.0), (0.25, 4.0), 2),
                 )?;
-                params.add(
-                    Params::DitherSize,
-                    "Dither Size",
-                    float_slider(1.0, (0.25, 100.0), (1.0, 8.0), 1),
-                )?;
                 params.add(Params::Octaves, "Noise Detail", int_slider(3, 1, 6))?;
-                params.add(
-                    Params::NoiseContrast,
-                    "Noise Contrast",
-                    float_slider(2.2, (0.1, 10.0), (0.5, 5.0), 2),
-                )?;
                 params.add(
                     Params::LayerChannel,
                     "Layer Channel",
                     popup(&CHANNEL_OPTIONS, 1),
                 )?;
-                params.add(
-                    Params::LayerScale,
-                    "Layer Scale",
-                    float_slider(100.0, (1.0, 10000.0), (10.0, 400.0), 1),
-                )?;
-                params.add(Params::LayerBlack, "Layer Black", percent_slider(0.0))?;
-                params.add(Params::LayerWhite, "Layer White", percent_slider(100.0))?;
                 params.add(Params::Invert, "Invert", checkbox(false))?;
                 params.add(Params::Seed, "Seed", int_slider(0, 0, 100000))?;
-                // 初期値はアンチエイリアスなし（くっきりした粒・網点のまま）
+                // 初期値はアンチエイリアスなし。レイヤーの画質が「ドラフト」のときも自動でなし
                 params.add(Params::AaSamples, "Antialias", popup(&AA_OPTIONS, 1))?;
                 Ok(())
             },
@@ -576,24 +520,16 @@ impl AdobePluginGlobal for Plugin {
             "Roughness",
             true,
             |params| {
-                params.add_with_flags(
-                    Params::RoughEnable,
-                    "Enable Roughness",
-                    checkbox(false),
-                    SUPERVISE,
-                    ae::ParamUIFlags::empty(),
-                )?;
                 params.add(
                     Params::Roughness,
                     "Rough Amount",
-                    float_slider(5.0, (0.0, 500.0), (0.0, 30.0), 1),
+                    float_slider(0.0, (0.0, 500.0), (0.0, 30.0), 1),
                 )?;
                 params.add(
                     Params::RoughScale,
                     "Rough Scale",
                     float_slider(20.0, (1.0, 2000.0), (2.0, 200.0), 1),
                 )?;
-                params.add(Params::RoughSeed, "Rough Seed", int_slider(0, 0, 100000))?;
                 Ok(())
             },
         )?;
@@ -635,10 +571,7 @@ impl AdobePluginGlobal for Plugin {
                     p,
                     Params::Enable(_)
                         | Params::TextureType
-                        | Params::TexEnable
                         | Params::DotShapeType
-                        | Params::MidEnable
-                        | Params::RoughEnable
                         | Params::CurveType
                         | Params::TexMode
                 ) {
@@ -683,16 +616,13 @@ impl AdobePluginGlobal for Plugin {
 
 /// 使っていない項目をグレーアウトする（値は残す）。
 /// - `Use n` がオフのスロットの Color / Tolerance / Spread / Grow
-/// - Texture が Smooth・Enable Texture がオフのときのテクスチャの項目と Amount
+/// - Texture が Smooth のときのテクスチャの項目と Amount
 /// - 選んだテクスチャの種類に関係ない項目
-/// - Enable がオフの Mid Color / Roughness の項目
 fn update_enabled_state(params: &ae::Parameters<Params>) -> Result<(), Error> {
     let checked = |p: Params| -> Result<bool, Error> { Ok(params.get(p)?.as_checkbox()?.value()) };
     let kind = texture_kind(params.get(Params::TextureType)?.as_popup()?.value());
     let shape = dot_shape(params.get(Params::DotShapeType)?.as_popup()?.value());
-    let tex_on = checked(Params::TexEnable)? && kind != TextureKind::Smooth;
-    let mid_on = checked(Params::MidEnable)?;
-    let rough_on = checked(Params::RoughEnable)?;
+    let tex_on = kind != TextureKind::Smooth;
     let custom_curve = params.get(Params::CurveType)?.as_popup()?.value() == 3;
 
     use TextureKind as K;
@@ -704,32 +634,18 @@ fn update_enabled_state(params: &ae::Parameters<Params>) -> Result<(), Error> {
             Params::Softness,
             tex_on && params.get(Params::TexMode)?.as_popup()?.value() == 1,
         ),
-        (Params::CellSize, is(&[K::Dot, K::Line, K::Noise])),
+        (Params::TexSize, tex_on),
         (Params::Angle, is(&[K::Dot, K::Line, K::Noise])),
-        (Params::TexOffsetX, tex_on),
-        (Params::TexOffsetY, tex_on),
+        (Params::TexPosition, tex_on),
         (Params::DotShapeType, is(&[K::Dot])),
         (Params::Aspect, is(&[K::Dot]) && shape == DotShape::Ellipse),
-        (Params::DitherSize, is(&[K::Bayer, K::Grain])),
         (Params::Octaves, is(&[K::Noise])),
-        (Params::NoiseContrast, is(&[K::Noise])),
         (Params::TexLayer, is(&[K::Layer])),
         (Params::LayerChannel, is(&[K::Layer])),
-        (Params::LayerScale, is(&[K::Layer])),
-        (Params::LayerBlack, is(&[K::Layer])),
-        (Params::LayerWhite, is(&[K::Layer])),
         (Params::Invert, tex_on),
-        (Params::Seed, is(&[K::Grain, K::Noise])),
         (Params::AaSamples, tex_on),
-        (Params::MidColor, mid_on),
-        (Params::MidAmount, mid_on),
-        (Params::MidWidth, mid_on),
-        (Params::MidPositionType, mid_on),
         (Params::CurveGraph, custom_curve),
         (Params::CurvePower, !custom_curve),
-        (Params::Roughness, rough_on),
-        (Params::RoughScale, rough_on),
-        (Params::RoughSeed, rough_on),
     ];
     for i in 0..NUM_SLOTS {
         let on = checked(Params::Enable(i))?;
@@ -785,15 +701,6 @@ fn frame_index(in_data: &InData) -> u32 {
     }
 }
 
-/// Draft を使うか（Off / レイヤーの画質が「ドラフト」のとき / 常に）
-fn draft_active(in_data: &InData, popup_value: i32) -> bool {
-    match popup_value {
-        3 => true,
-        2 => in_data.quality() == ae::Quality::Lo,
-        _ => false,
-    }
-}
-
 fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read, Error> {
     let ds = downsample(in_data);
     let fs =
@@ -824,10 +731,9 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
     } else {
         0
     };
-    let draft = draft_active(in_data, popup(Params::Draft)?);
     let mid = params.get(Params::MidColor)?.as_color()?.value();
-    let aa = if draft {
-        // Draft ではサブピクセルのサンプリングを省く（いちばん重い部分）
+    let aa = if in_data.quality() == ae::Quality::Lo {
+        // レイヤーの画質が「ドラフト」のときはサブピクセルのサンプリングを省く（いちばん重い部分）
         1
     } else {
         match popup(Params::AaSamples)? {
@@ -837,9 +743,8 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
             _ => 4,
         }
     };
-    let rough_on = checked(Params::RoughEnable)?;
-    let mid_on = checked(Params::MidEnable)?;
-    let tex_on = checked(Params::TexEnable)?;
+    let seed = (int(Params::Seed)? as u32).wrapping_add(frame.wrapping_mul(104_729));
+    let size = fs(Params::TexSize)?;
 
     let settings = Settings {
         colors,
@@ -860,7 +765,6 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
             .map(|d| d.points())
             .unwrap_or_default(),
         curve_power: fs(Params::CurvePower)?,
-        max_neighbors: int(Params::MaxNeighbors)?.max(1) as usize,
         amount: fs(Params::Amount)? / 100.0,
         texture_mode: if popup(Params::TexMode)? == 2 {
             TextureMode::Map
@@ -869,58 +773,45 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
         },
         softness: fs(Params::Softness)? * ds,
         aa_samples: aa,
-        // オフのグループは計算しない（値は 0 として扱う）
-        roughness: if rough_on {
-            fs(Params::Roughness)? * ds
-        } else {
-            0.0
-        },
+        roughness: fs(Params::Roughness)? * ds,
         rough_scale: fs(Params::RoughScale)? * ds,
-        rough_seed: (int(Params::RoughSeed)? as u32).wrapping_add(frame.wrapping_mul(7919)),
+        rough_seed: seed ^ 0x2545_f491,
         mid_color: [
             mid.red as f32 / 255.0,
             mid.green as f32 / 255.0,
             mid.blue as f32 / 255.0,
         ],
-        mid_amount: if mid_on {
-            fs(Params::MidAmount)? / 100.0
-        } else {
-            0.0
-        },
+        mid_amount: fs(Params::MidAmount)? / 100.0,
         mid_width: fs(Params::MidWidth)? / 100.0,
-        mid_position: if popup(Params::MidPositionType)? == 2 {
-            MidPosition::Core
-        } else {
-            MidPosition::Rim
-        },
         output: if popup(Params::Output)? == 2 {
             OutputMode::Gradient
         } else {
             OutputMode::Result
         },
         origin: (0, 0),
+        // Max Mix Colors（4）と Mid Position（Core）は固定
+        ..Default::default()
     };
     let angle: f32 = params.get(Params::Angle)?.as_angle()?.value();
     let tex = TextureParams {
-        kind: if tex_on {
-            texture_kind(popup(Params::TextureType)?)
-        } else {
-            TextureKind::Smooth
-        },
-        cell: fs(Params::CellSize)? * ds,
+        kind: texture_kind(popup(Params::TextureType)?),
+        // Texture Size 8 を標準に、種類ごとに大きさの意味を合わせる
+        cell: size * ds,
         angle_deg: angle,
-        seed: (int(Params::Seed)? as u32).wrapping_add(frame.wrapping_mul(104_729)),
+        seed,
         invert: checked(Params::Invert)?,
-        offset: (fs(Params::TexOffsetX)? * ds, fs(Params::TexOffsetY)? * ds),
+        offset: {
+            // 点はレイヤーの座標（フル解像度）で届く
+            let (x, y) = params.get(Params::TexPosition)?.as_point()?.value();
+            (x * ds, y * ds)
+        },
         dot_shape: dot_shape(popup(Params::DotShapeType)?),
         aspect: fs(Params::Aspect)?,
-        dither_size: fs(Params::DitherSize)? * ds,
+        dither_size: size / 8.0 * ds,
         octaves: int(Params::Octaves)?.max(1) as u32,
-        noise_contrast: fs(Params::NoiseContrast)?,
         // テクスチャレイヤーのワールドも同じだけ縮小されて届くので、ここでは ds を掛けない
-        layer_scale: fs(Params::LayerScale)? / 100.0,
-        layer_black: fs(Params::LayerBlack)? / 100.0,
-        layer_white: fs(Params::LayerWhite)? / 100.0,
+        layer_scale: size / 8.0,
+        ..Default::default()
     };
     Ok(Read {
         settings,

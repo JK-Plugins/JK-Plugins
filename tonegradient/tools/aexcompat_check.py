@@ -23,20 +23,17 @@ SLOT = {
     "Texture Layer": 4,
     "Texture Mode": 5,
     "Amount": 6,
-    "Draft": 7,
-    "Animate Seed": 8,
-    # Color Select: 9〜244（Colors 1-8 の Use 1 が 13、Color 1 が 14）
-    "Offset": 246,
-    "Curve": 248,
-    "Curve Graph": 249,
-    "Enable Mid Color": 254,
-    "Mid Amount": 256,
-    "Mid Width": 257,
-    "Mid Position": 258,
-    "Enable Texture": 261,
-    "Softness": 262,
-    "Cell Size": 263,
-    "Antialias": 278,
+    "Animate Seed": 7,
+    # Color Select: 8〜243（Colors 1-8 の Use 1 が 12、Color 1 が 13）
+    "Offset": 245,
+    "Curve": 247,
+    "Curve Graph": 248,
+    "Curve Power": 249,
+    "Mid Amount": 253,
+    "Mid Width": 254,
+    "Softness": 257,
+    "Texture Size": 258,
+    "Antialias": 267,
 }
 
 TEXTURES = ["Smooth", "Dot", "Line", "Bayer", "Grain", "Noise", "Layer"]
@@ -47,7 +44,6 @@ POPUP_CHOICES = {
     "Texture Mode": 2,
     "Output": 2,
     "Texture": 7,
-    "Draft": 3,
     "Curve": 3,
     "Mid Position": 2,
     "Antialias": 4,
@@ -102,8 +98,8 @@ def cases(out):
     return [
         ("default", []),
         ("Dot / Softness 3px", [param("Width", 120), param("Softness", 3)]),
-        ("Noise / Map", [param("Texture", 6), param("Width", 120), param("Cell Size", 8), param("Texture Mode", 2)]),
-        ("Dot / Mid Color", [param("Width", 120), param("Enable Mid Color", 1), param("Mid Amount", 80)]),
+        ("Noise / Map", [param("Texture", 6), param("Width", 120), param("Texture Size", 8), param("Texture Mode", 2)]),
+        ("Dot / Mid Color", [param("Width", 120), param("Mid Amount", 80)]),
         ("Texture Layer", [param("Texture", 7), param("Width", 800), param("Texture Layer", 0, "layer", layer)]),
     ]
 

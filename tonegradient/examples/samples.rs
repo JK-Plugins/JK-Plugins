@@ -264,23 +264,6 @@ fn cases() -> Vec<Case> {
         dot(),
     ));
 
-    // Max Mix Colors（3色の接合部を拡大）
-    let jz = Some((150, 70, 90, 90));
-    for n in [1usize, 2, 4] {
-        let mut c = case(
-            "06_max_mix",
-            &format!("Max Mix Colors {n}"),
-            Settings {
-                max_neighbors: n,
-                width: 60.0,
-                ..b()
-            },
-            smooth(),
-        );
-        c.zoom = jz;
-        v.push(c);
-    }
-
     // Mid Color（3つ目の色としてグラデーションに入る。テクスチャも同じようにかかる）
     let mid = |amount: f32, width: f32, pos: MidPosition| Settings {
         mid_color: [1.0, 0.55, 0.45],
@@ -307,14 +290,14 @@ fn cases() -> Vec<Case> {
         mid(1.0, 1.0, MidPosition::Core),
         smooth(),
     ));
-    for (lab, pos) in [
-        ("Dot / Mid 60% / Core", MidPosition::Core),
-        ("Dot / Mid 60% / Rim", MidPosition::Rim),
-    ] {
-        let mut c = case("07_mid_color", lab, mid(0.6, 0.5, pos), dot());
-        c.zoom = Some((120, 60, 120, 120));
-        v.push(c);
-    }
+    let mut c = case(
+        "07_mid_color",
+        "Dot / Mid 60%",
+        mid(0.6, 0.5, MidPosition::Core),
+        dot(),
+    );
+    c.zoom = Some((120, 60, 120, 120));
+    v.push(c);
 
     // Texture 種類
     for (name, kind) in [
@@ -401,11 +384,11 @@ fn cases() -> Vec<Case> {
         v.push(c);
     }
 
-    // Dither Size（Bayer）
+    // Texture Size（Bayer の1粒は Size ÷ 8 px）
     for d in [1.0, 2.0, 4.0] {
         let mut c = case(
             "12_dither_size",
-            &format!("Bayer / Dither Size {d}"),
+            &format!("Bayer / Texture Size {}", d * 8.0),
             b(),
             TextureParams {
                 kind: TextureKind::Bayer,
@@ -418,13 +401,11 @@ fn cases() -> Vec<Case> {
         v.push(c);
     }
 
-    // Noise Detail / Contrast
+    // Noise Detail
     for (lab, oct, con) in [
         ("Detail 1", 1, 2.2),
         ("Detail 3", 3, 2.2),
         ("Detail 6", 6, 2.2),
-        ("Contrast 1", 3, 1.0),
-        ("Contrast 5", 3, 5.0),
     ] {
         v.push(case(
             "13_noise",
@@ -442,9 +423,8 @@ fn cases() -> Vec<Case> {
 
     // Layer Scale / Levels / Invert
     for (lab, sc, bl, wh, inv) in [
-        ("Scale 100%", 1.0, 0.0, 1.0, false),
-        ("Scale 300%", 3.0, 0.0, 1.0, false),
-        ("Black 30% / White 70%", 1.0, 0.3, 0.7, false),
+        ("Texture Size 8", 1.0, 0.0, 1.0, false),
+        ("Texture Size 24", 3.0, 0.0, 1.0, false),
         ("Invert", 1.0, 0.0, 1.0, true),
     ] {
         let mut c = case(
