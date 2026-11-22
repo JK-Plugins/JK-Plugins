@@ -15,6 +15,7 @@ on:
     paths:
       - README.md
       - .github/scripts/site.py
+      - ".github/scripts/site/**"
       - .github/workflows/pages.yml
       - "*/docs/samples/00_overview.png"
       # ブラウザで試すページ（エンジンを WebAssembly にしたもの）
