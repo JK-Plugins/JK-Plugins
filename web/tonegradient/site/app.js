@@ -260,7 +260,7 @@
   // グループの始まり・終わりも 1 つずつ数える。並びを変えたらここも合わせる。
   var AE_EFFECT = "JK Tone Gradient";
   var AE = (function () {
-    var list = ["Output", "Width", "Texture", "Texture Layer", "Texture Mode", "Amount", "Animate Seed",
+    var list = ["Output", "Width", "Stop at Lines", "Texture", "Texture Layer", "Texture Mode", "Amount", "Animate Seed",
       "<Color Select", "Tolerance", "Alpha Threshold"];
     for (var g = 0; g < 4; g++) {
       list.push("<Colors");
@@ -293,7 +293,7 @@
   function aeText(withColors) {
     var kind = val("tex_kind");
     var v = [
-      ["Output", val("output") + 1], ["Width", val("width")], ["Texture", kind + 1], ["Texture Mode", val("tex_mode") + 1],
+      ["Output", val("output") + 1], ["Width", val("width")], ["Stop at Lines", val("stop")], ["Texture", kind + 1], ["Texture Mode", val("tex_mode") + 1],
       ["Amount", val("amount")], ["Offset", val("offset")], ["Reverse Order", val("reverse")], ["Curve", val("curve") + 1],
       ["Curve Power", val("curve_power")], ["Interpolation", val("interp") + 1],
       ["Mid Color", rgb(panel.querySelector('[data-p="mid_color"]').value)], ["Mid Amount", val("mid_amount")], ["Mid Width", val("mid_width")],
