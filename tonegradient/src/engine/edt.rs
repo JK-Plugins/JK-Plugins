@@ -136,6 +136,232 @@ pub fn distance_sq_by(
     out_d2
 }
 
+/// 壁を越えない距離変換。`passable` な画素だけを伝って届くシードのうち、
+/// いちばん近いもの（直線距離）の二乗距離を返す（届かないものは INFINITY）。
+///
+/// 最近傍シードの位置を隣から受け渡すラスター走査（8SSEDT と同じ近傍）を、変わらなくなるまで繰り返す。
+/// 開けたところでは普通の距離変換とほぼ同じになり、壁の向こうへは回り込める道があるときだけ届く。
+/// 斜めの移動は、間の縦・横の画素の少なくとも一方が `passable` のときだけ（1px の斜めの線をすり抜けない）。
+/// シードは `passable` であること。
+pub fn distance_sq_constrained(
+    w: usize,
+    h: usize,
+    is_seed: impl Fn(usize, usize) -> bool + Sync,
+    passable: impl Fn(usize, usize) -> bool + Sync,
+) -> Vec<f32> {
+    let n = w * h;
+    if n == 0 {
+        return Vec::new();
+    }
+    let stripes = thread_count(h / 24).max(1);
+    let rows_per = h.div_ceil(stripes);
+    // 0 = 壁、1 = 通れる（距離を求める）、2 = シード
+    let mut kind = vec![0u8; n];
+    // シードの位置（x, y）。届いていなければ NOSEED
+    let mut seed = vec![(NOSEED, 0i32); n];
+    // 行ごとに、距離を求める画素がある範囲（無ければ start > end）
+    let mut span = vec![(usize::MAX, 0usize); h];
+    {
+        let (is_seed, passable) = (&is_seed, &passable);
+        super::par::scope(|sc| {
+            for (i, ((kc, sc_), spc)) in kind
+                .chunks_mut(rows_per * w)
+                .zip(seed.chunks_mut(rows_per * w))
+                .zip(span.chunks_mut(rows_per))
+                .enumerate()
+            {
+                sc.spawn(move || {
+                    let r0 = i * rows_per;
+                    for (ry, sp) in spc.iter_mut().enumerate() {
+                        let y = r0 + ry;
+                        for x in 0..w {
+                            let li = ry * w + x;
+                            if is_seed(x, y) {
+                                kc[li] = 2;
+                                sc_[li] = (x as i32, y as i32);
+                            } else if passable(x, y) {
+                                kc[li] = 1;
+                                sp.0 = sp.0.min(x);
+                                sp.1 = sp.1.max(x);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+    // 行を帯に分けてスレッドで並べて走査する。帯の外の行（上下1行）は、その回の初めの値を読む。
+    // 帯をまたぐ受け渡しは回を重ねて伝わるので、変わらなくなるまで繰り返す
+    let kind = &kind;
+    let span = &span;
+    for _ in 0..1024 {
+        // 帯の境目の行の写し（帯 i の上の行・下の行）
+        let edge = |y: Option<usize>| -> Option<Vec<(i32, i32)>> {
+            y.map(|y| seed[y * w..(y + 1) * w].to_vec())
+        };
+        let edges: Vec<(Option<Vec<(i32, i32)>>, Option<Vec<(i32, i32)>>)> = (0..h
+            .div_ceil(rows_per))
+            .map(|i| {
+                let r0 = i * rows_per;
+                let r1 = (r0 + rows_per).min(h);
+                (edge(r0.checked_sub(1)), edge((r1 < h).then_some(r1)))
+            })
+            .collect();
+        let changed: bool = super::par::scope(|sc| {
+            let hs: Vec<_> = seed
+                .chunks_mut(rows_per * w)
+                .zip(edges.iter())
+                .enumerate()
+                .map(|(i, (sd, (up, down)))| {
+                    sc.spawn(move || {
+                        let r0 = i * rows_per;
+                        let r1 = r0 + sd.len() / w;
+                        let mut st = Stripe {
+                            w,
+                            h,
+                            r0,
+                            r1,
+                            kind,
+                            seed: sd,
+                            up: up.as_deref(),
+                            down: down.as_deref(),
+                        };
+                        st.sweep(span)
+                    })
+                })
+                .collect();
+            hs.into_iter().fold(false, |c, h| h.join().unwrap() | c)
+        });
+        if !changed {
+            break;
+        }
+    }
+    // 二乗距離にする（帯ごとにスレッドで）
+    let mut out = vec![f32::INFINITY; n];
+    let seed = &seed;
+    super::par::scope(|sc| {
+        for (i, oc) in out.chunks_mut(rows_per * w).enumerate() {
+            sc.spawn(move || {
+                let base = i * rows_per * w;
+                for (li, o) in oc.iter_mut().enumerate() {
+                    let (sx, sy) = seed[base + li];
+                    if sx != NOSEED {
+                        let (x, y) = (((base + li) % w) as i64, ((base + li) / w) as i64);
+                        let (ex, ey) = (x - sx as i64, y - sy as i64);
+                        *o = (ex * ex + ey * ey) as f32;
+                    }
+                }
+            });
+        }
+    });
+    out
+}
+
+const NOSEED: i32 = i32::MIN;
+
+/// `distance_sq_constrained` の1本の帯（行 r0..r1）
+struct Stripe<'a> {
+    w: usize,
+    h: usize,
+    r0: usize,
+    r1: usize,
+    kind: &'a [u8],
+    seed: &'a mut [(i32, i32)],
+    /// 帯のすぐ上・すぐ下の行のシード（その回の初めの値）
+    up: Option<&'a [(i32, i32)]>,
+    down: Option<&'a [(i32, i32)]>,
+}
+
+impl Stripe<'_> {
+    #[inline(always)]
+    fn seed_at(&self, x: usize, y: usize) -> (i32, i32) {
+        if y < self.r0 {
+            self.up.map_or((NOSEED, 0), |r| r[x])
+        } else if y >= self.r1 {
+            self.down.map_or((NOSEED, 0), |r| r[x])
+        } else {
+            self.seed[(y - self.r0) * self.w + x]
+        }
+    }
+
+    /// (x, y) の画素に、隣 (x+dx, y+dy) の持つシードを受け取れるなら受け取る
+    #[inline(always)]
+    fn relax(&mut self, x: usize, y: usize, dx: isize, dy: isize) -> bool {
+        let (w, h) = (self.w, self.h);
+        let nx = x as isize + dx;
+        let ny = y as isize + dy;
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+            return false;
+        }
+        let (nx, ny) = (nx as usize, ny as usize);
+        let (sx, sy) = self.seed_at(nx, ny);
+        if sx == NOSEED {
+            return false;
+        }
+        // 斜めは、間の縦・横の少なくとも一方が通れるときだけ（1px の斜めの線をすり抜けない）
+        if dx != 0 && dy != 0 && self.kind[y * w + nx] == 0 && self.kind[ny * w + x] == 0 {
+            return false;
+        }
+        let i = (y - self.r0) * w + x;
+        let sq = |sx: i32, sy: i32| {
+            let (ex, ey) = ((x as i32 - sx) as i64, (y as i32 - sy) as i64);
+            ex * ex + ey * ey
+        };
+        let (cx, cy) = self.seed[i];
+        if cx == NOSEED || sq(sx, sy) < sq(cx, cy) {
+            self.seed[i] = (sx, sy);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 前向き・後ろ向きの走査を1回ずつ（8SSEDT と同じ近傍）
+    fn sweep(&mut self, span: &[(usize, usize)]) -> bool {
+        let w = self.w;
+        let mut changed = false;
+        for y in self.r0..self.r1 {
+            let (a, b) = span[y];
+            if a > b {
+                continue;
+            }
+            for x in a..=b {
+                if self.kind[y * w + x] != 1 {
+                    continue;
+                }
+                for (dx, dy) in [(-1, 0), (-1, -1), (0, -1), (1, -1)] {
+                    changed |= self.relax(x, y, dx, dy);
+                }
+            }
+            for x in (a..=b).rev() {
+                if self.kind[y * w + x] == 1 {
+                    changed |= self.relax(x, y, 1, 0);
+                }
+            }
+        }
+        for y in (self.r0..self.r1).rev() {
+            let (a, b) = span[y];
+            if a > b {
+                continue;
+            }
+            for x in (a..=b).rev() {
+                if self.kind[y * w + x] != 1 {
+                    continue;
+                }
+                for (dx, dy) in [(1, 0), (1, 1), (0, 1), (-1, 1)] {
+                    changed |= self.relax(x, y, dx, dy);
+                }
+            }
+            for x in a..=b {
+                if self.kind[y * w + x] == 1 {
+                    changed |= self.relax(x, y, -1, 0);
+                }
+            }
+        }
+        changed
+    }
+}
+
 fn thread_count(work: usize) -> usize {
     let n = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -231,6 +457,53 @@ pub fn nearest_seed(w: usize, h: usize, seed: &[bool]) -> (Vec<u32>, Vec<f32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn constrained_matches_plain_without_walls() {
+        let (w, h) = (41usize, 29usize);
+        let mut seed = vec![false; w * h];
+        let mut s = 777u32;
+        for i in 0..w * h {
+            s = s.wrapping_mul(1103515245).wrapping_add(12345);
+            seed[i] = (s >> 16) % 53 == 0;
+        }
+        let a = distance_sq(w, h, &seed);
+        let b = distance_sq_constrained(w, h, |x, y| seed[y * w + x], |_, _| true);
+        let mut worst = 0f32;
+        for i in 0..w * h {
+            worst = worst.max((a[i].sqrt() - b[i].sqrt()).abs());
+        }
+        // 位置を受け渡す方法なのでわずかな誤差はある
+        assert!(worst < 0.5, "worst {worst}");
+    }
+
+    #[test]
+    fn constrained_stops_at_walls() {
+        // 左端の列がシード。x = 10 に縦の壁（y = 0 のところだけすき間）
+        let (w, h) = (20usize, 15usize);
+        let wall = |x: usize, y: usize| x == 10 && y != 0;
+        let d = distance_sq_constrained(w, h, |x, _| x == 0, |x, y| !wall(x, y));
+        // 壁のすぐ右は、すき間を回り込んだ分だけ遠い（直線距離 11 ではなく、すき間の先のシードまで）
+        assert!(d[14 * w + 11].is_finite());
+        assert!(
+            d[14 * w + 11].sqrt() > 11.0 + 1.0,
+            "{}",
+            d[14 * w + 11].sqrt()
+        );
+        // 壁の上は届かない
+        assert!(d[5 * w + 10].is_infinite());
+        // 斜めの1px の線はすり抜けない
+        let (w, h) = (12usize, 12usize);
+        let diag = |x: usize, y: usize| x == y;
+        let d = distance_sq_constrained(w, h, |x, y| x == 0 && y > 0, |x, y| !diag(x, y));
+        for y in 0..h {
+            for x in 0..w {
+                if x > y {
+                    assert!(d[y * w + x].is_infinite(), "leak at {x},{y}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn matches_brute_force() {

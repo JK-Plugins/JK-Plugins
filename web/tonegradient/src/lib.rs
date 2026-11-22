@@ -33,7 +33,8 @@ const P_NOISE_CONTRAST: usize = 24;
 const P_SEED: usize = 25;
 const P_INVERT: usize = 26;
 const P_TOLERANCE: usize = 27;
-pub const N_PARAMS: usize = 28;
+const P_STOP: usize = 28;
+pub const N_PARAMS: usize = 29;
 
 /// JavaScript 用のメモリ確保（`len` バイト）
 #[no_mangle]
@@ -79,9 +80,11 @@ fn settings(p: &[f32], colors: &[f32]) -> Settings {
         mid_amount: if mid_on { p[P_MID_AMOUNT].clamp(0.0, 1.0) } else { 0.0 },
         mid_color: [p[P_MID_R], p[P_MID_R + 1], p[P_MID_R + 2]],
         mid_width: p[P_MID_WIDTH].clamp(0.0, 1.0),
+        stop_at_lines: flag(p[P_STOP]),
         interpolation: match p[P_INTERP] as u32 {
             1 => Interpolation::Linear,
             2 => Interpolation::Perceptual,
+            3 => Interpolation::Pigment,
             _ => Interpolation::Classic,
         },
         output: if flag(p[P_OUTPUT]) { OutputMode::Gradient } else { OutputMode::Result },

@@ -12,8 +12,7 @@ use curve_ui::CurveData;
 
 use crate::engine::{
     self, Curve, DotShape, GroupColor, Interpolation, LayerTexture, OutputMode, Prepared, Settings,
-    Texture,
-    TextureKind, TextureMode, TextureParams,
+    Texture, TextureKind, TextureMode, TextureParams,
 };
 
 /// 距離変換まで済ませた途中結果のキャッシュ（新しい順）。
@@ -108,6 +107,7 @@ enum Params {
     // --- 全体（一番上） ---
     Output,
     Width,
+    StopAtLines,
     TextureType,
     TexLayer,
     TexMode,
@@ -173,7 +173,11 @@ enum Params {
 
 const TEXTURE_OPTIONS: [&str; 7] = ["Smooth", "Dot", "Line", "Bayer", "Grain", "Noise", "Layer"];
 const DOT_OPTIONS: [&str; 5] = ["Round", "Circle", "Ellipse", "Square", "Diamond"];
-const INTERP_OPTIONS: [&str; 3] = ["Classic", "Linear", "Perceptual"];
+/// 取り込んだもののライセンス表示（.aex だけを配るときも中に入るように）
+#[used]
+static THIRD_PARTY_NOTICES: &str = include_str!("../THIRD_PARTY_NOTICES.txt");
+
+const INTERP_OPTIONS: [&str; 4] = ["Classic", "Linear", "Perceptual", "Pigment"];
 const AA_OPTIONS: [&str; 4] = ["Off", "2x2", "4x4", "8x8"];
 const CHANNEL_OPTIONS: [&str; 5] = ["Luminance", "Alpha", "Red", "Green", "Blue"];
 
@@ -307,6 +311,8 @@ impl AdobePluginGlobal for Plugin {
             "Width",
             float_slider(20.0, (0.0, 2000.0), (0.0, 200.0), 1),
         )?;
+        // 線（グループの色以外）や透明なところをまたいで混ぜない
+        params.add(Params::StopAtLines, "Stop at Lines", checkbox(true))?;
         params.add_with_flags(
             Params::TextureType,
             "Texture",
@@ -597,7 +603,7 @@ impl AdobePluginGlobal for Plugin {
         match cmd {
             ae::Command::About => {
                 out_data.set_return_msg(&format!(
-                    "JK Tone Gradient v{}\rGradients between grouped colors with halftone / dither / texture.\rhttps://github.com/JK-Plugins/JK-Plugins",
+                    "JK Tone Gradient v{}\rGradients between grouped colors with halftone / dither / texture.\rhttps://github.com/JK-Plugins/JK-Plugins\r\rPigment: Spectral.js, Copyright (c) 2025 Ronald van Wijnen (MIT License)",
                     env!("CARGO_PKG_VERSION")
                 ));
             }
@@ -929,11 +935,17 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
             mid.green as f32 / 255.0,
             mid.blue as f32 / 255.0,
         ],
-        mid_amount: if mid_on { fs(Params::MidAmount)? / 100.0 } else { 0.0 },
+        mid_amount: if mid_on {
+            fs(Params::MidAmount)? / 100.0
+        } else {
+            0.0
+        },
         mid_width: fs(Params::MidWidth)? / 100.0,
+        stop_at_lines: checked(Params::StopAtLines)?,
         interpolation: match popup(Params::Interpolation)? {
             2 => Interpolation::Linear,
             3 => Interpolation::Perceptual,
+            4 => Interpolation::Pigment,
             _ => Interpolation::Classic,
         },
         output: if popup(Params::Output)? == 2 {

@@ -33,6 +33,7 @@
 |---|---|
 | Output | Result / Gradient (check)：テクスチャ前の色の並び（番号の重み付き平均）をグレーで確認 |
 | Width | グラデーション全体の幅（px）。境界の両側に半分ずつ |
+| Stop at Lines | オン（初期値）：線や透明なところをまたいで混ぜない。グループの色以外の画素（実線・色トレス・グループ外の色）と Alpha Threshold 未満の画素を壁として、距離を壁を越えずに測る。1px の線でも止まり、線が途切れているところからは回り込んで混ざる。オフ：壁を気にせず直線距離で混ぜる（0.1.3 までの動き）。アンチエイリアスのかかった絵では、色の間の中間色も壁になるので、Tolerance で同じ色として拾う |
 | Texture | Smooth / Dot / Line / Bayer / Grain / Noise / Layer |
 | Texture Layer | Texture が Layer のときに使うレイヤー。コンポジションでのそのレイヤーの位置・スケール・回転（親レイヤーも含む、2D のみ）どおりに1枚だけ重ねる（繰り返さない）。レイヤーの外側はテクスチャをかけない。レイヤーは非表示（目のアイコンをオフ）にしておいてよい |
 | Texture Mode | Threshold（初期値）：テクスチャの値と色の割合を比べて色を選ぶ（網点のように2色に分かれる）／ Map：テクスチャの濃淡で混ざり具合を連続的にずらす（2値にならない。Amount が強さ。平均の色の割合と両端は変わらない） |
@@ -70,7 +71,7 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 | Curve | Linear / Smooth / Custom |
 | Curve Graph | Curve が Custom のときに使うカーブのグラフ。クリックで点を追加（近くに点があればつかむ）、ドラッグで動かし、グラフの外までドラッグして離すと消える。両端 (0,0)・(1,1) は固定で、点の間は行き過ぎない単調な曲線でつなぐ（点は最大8個）。キーフレームも打てる（点の数が同じならなめらかに変わる） |
 | Curve Power | 1 でそのまま。大きいほど境界付近が急に、小さいほど端まで残る（Custom のときは使わない） |
-| Interpolation | 色の混ぜ方。**Classic**：RGB の値をそのまま混ぜる（初期値、これまでと同じ）／**Linear**：光の強さ（リニア）に直して混ぜる（明るい側に寄る）／**Perceptual**：Oklab（人の見え方に近い色空間）で混ぜる（明るさがなめらかで、中間がくすみにくい）。色が連続して混ざるところ（Smooth や Map）で違いが出る。色は sRGB の値として扱うので、32bpc でリニアな作業用カラースペースのときは Classic がすでにリニアで混ぜたことになる |
+| Interpolation | 色の混ぜ方。**Classic**：RGB の値をそのまま混ぜる（初期値、これまでと同じ）／**Linear**：光の強さ（リニア）に直して混ぜる（明るい側に寄る）／**Perceptual**：Oklab（人の見え方に近い色空間）で混ぜる（明るさがなめらかで、中間がくすみにくい）／**Pigment**：絵の具のように混ぜる（Kubelka–Munk。黄と青で緑、補色どうしは濁る。濃い色・暗い色が勝ちやすい。[Spectral.js](https://github.com/rvanwijnen/spectral.js) の移植で、グラデーションの両端は元の色にぴったり戻るように補正している）。色が連続して混ざるところ（Smooth や Map）で違いが出る。色は sRGB の値として扱うので、32bpc でリニアな作業用カラースペースのときは Classic がすでにリニアで混ぜたことになる |
 
 ![Curve](docs/samples/02_curve.png)
 ![Offset / Reverse](docs/samples/05_offset_reverse.png)
@@ -124,6 +125,10 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 | 名前 | 内容 |
 |---|---|
 | Render | GPU（初期値）/ CPU。距離変換と色の合成を GPU（DirectX 12・Vulkan・Metal）で行う。結果は CPU と同じ。GPU が使えないときは自動で CPU |
+
+## ライセンス表示
+
+Interpolation の Pigment は [Spectral.js](https://github.com/rvanwijnen/spectral.js)（Copyright (c) 2025 Ronald van Wijnen、MIT License）を移植したものです。全文は [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) にあり、配布するファイル（zip・インストーラー・.plugin）にも入れています。
 
 ## ビルド
 

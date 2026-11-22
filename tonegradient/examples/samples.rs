@@ -269,6 +269,7 @@ fn cases() -> Vec<Case> {
         ("Classic", Interpolation::Classic),
         ("Linear", Interpolation::Linear),
         ("Perceptual", Interpolation::Perceptual),
+        ("Pigment", Interpolation::Pigment),
     ] {
         v.push(case(
             "06_interpolation",

@@ -56,6 +56,7 @@
         <div class="row"><span class="name">Output</span>
           <div class="seg" data-p="output"><button data-v="0" class="on">Result</button><button data-v="1">Gradient</button></div></div>
         <div class="row"><span class="name">Width</span><input type="range" data-p="width" min="0" max="160" step="1" value="40"><output></output></div>
+        <div class="row"><span class="name">Stop at Lines</span><label class="sw"><input type="checkbox" data-p="stop" checked><span></span></label></div>
         <div class="row" data-show="img"><span class="name">Tolerance</span><input type="range" data-p="tolerance" min="0" max="64" step="1" value="0"><output></output></div>
       </div>
 
@@ -89,7 +90,7 @@
         <div class="row"><span class="name">Curve Power</span><input type="range" data-p="curve_power" min="0.2" max="4" step="0.05" value="1"><output></output></div>
         <div class="row"><span class="name">Reverse Order</span><label class="sw"><input type="checkbox" data-p="reverse"><span></span></label></div>
         <div class="row"><span class="name">Interpolation</span>
-          <div class="seg" data-p="interp"><button data-v="0" class="on">Classic</button><button data-v="1">Linear</button><button data-v="2">Perceptual</button></div></div>
+          <div class="seg wrap4" data-p="interp"><button data-v="0" class="on">Classic</button><button data-v="1">Linear</button><button data-v="2">Perceptual</button><button data-v="3">Pigment</button></div></div>
       </div>
 
       <div class="group">
@@ -109,6 +110,7 @@
       <button class="ghost reset" id="reset">初期値に戻す</button>
     </section>
   </main>
+  <p class="credit">Pigment は <a href="https://github.com/rvanwijnen/spectral.js">Spectral.js</a>（© 2025 Ronald van Wijnen、MIT License）を移植したもの</p>
 </div>
 <script src="app.js"></script>
 </body>
