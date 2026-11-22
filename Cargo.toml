@@ -3,6 +3,8 @@ members = [
     "tonegradient",
     "libs",
 ]
+# ブラウザのデモ（WebAssembly）は別にビルドする
+exclude = ["web"]
 
 [patch.crates-io.win_dbg_logger]
 git = "https://github.com/wladwm/win_dbg_logger"

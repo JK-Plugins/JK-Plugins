@@ -1,0 +1,27 @@
+[package]
+name = "tonegradient-web"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "JK Tone Gradient のブラウザ用デモ（WebAssembly）"
+
+# プラグインのワークスペースとは別（Pages のワークフローでだけビルドする）
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tonegradient = { path = "../../tonegradient" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# ネイティブでテストするとき用（プラグインのワークスペースと同じ）
+[patch.crates-io.win_dbg_logger]
+git = "https://github.com/wladwm/win_dbg_logger"
+branch = "master"

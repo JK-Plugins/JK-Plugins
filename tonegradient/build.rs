@@ -31,6 +31,10 @@ fn effect_version() -> (u32, u32, u32) {
 
 #[rustfmt::skip]
 fn main() {
+    // ブラウザのデモ（wasm32）もPiPLは作らない（ビルドスクリプトはホストの cfg で動くので環境変数で見る）
+    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
+        return;
+    }
     // Linux などAE非対応環境ではPiPLを作らない（コアのテストだけ行う）
     #[cfg(any(windows, target_os = "macos"))]
     {

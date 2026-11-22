@@ -662,6 +662,12 @@ impl AdobePluginGlobal for Plugin {
     }
 }
 
+/// Mid Color を使うか。しきい値（Threshold）で2値に分けるときは色が中間にならないので使わない。
+/// テクスチャなし（Smooth）か Map のときだけ使う
+fn mid_color_used(kind: TextureKind, map_mode: bool) -> bool {
+    kind == TextureKind::Smooth || map_mode
+}
+
 /// 使っていない項目をグレーアウトする（値は残す）。
 /// - `Use n` がオフのスロットの Color / Tolerance / Spread / Grow
 /// - Texture が Smooth のときのテクスチャの項目と Amount
@@ -696,6 +702,11 @@ fn update_enabled_state(params: &ae::Parameters<Params>) -> Result<(), Error> {
         (Params::CurveGraph, custom_curve),
         (Params::CurvePower, !custom_curve),
     ];
+    // Mid Color はグラデーションが2値にならないとき（Smooth か Map）だけ
+    let mid_on = mid_color_used(kind, params.get(Params::TexMode)?.as_popup()?.value() == 2);
+    for p in [Params::MidColor, Params::MidAmount, Params::MidWidth] {
+        wanted.push((p, mid_on));
+    }
     for i in 0..NUM_SLOTS {
         let on = checked(Params::Enable(i))?;
         for p in [
@@ -858,6 +869,8 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
         0
     };
     let mid = params.get(Params::MidColor)?.as_color()?.value();
+    let map_mode = popup(Params::TexMode)? == 2;
+    let mid_on = mid_color_used(texture_kind(popup(Params::TextureType)?), map_mode);
     let aa = if in_data.quality() == ae::Quality::Lo {
         // レイヤーの画質が「ドラフト」のときはサブピクセルのサンプリングを省く（いちばん重い部分）
         1
@@ -892,7 +905,7 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
             .unwrap_or_default(),
         curve_power: fs(Params::CurvePower)?,
         amount: fs(Params::Amount)? / 100.0,
-        texture_mode: if popup(Params::TexMode)? == 2 {
+        texture_mode: if map_mode {
             TextureMode::Map
         } else {
             TextureMode::Threshold
@@ -907,7 +920,7 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
             mid.green as f32 / 255.0,
             mid.blue as f32 / 255.0,
         ],
-        mid_amount: fs(Params::MidAmount)? / 100.0,
+        mid_amount: if mid_on { fs(Params::MidAmount)? / 100.0 } else { 0.0 },
         mid_width: fs(Params::MidWidth)? / 100.0,
         output: if popup(Params::Output)? == 2 {
             OutputMode::Gradient
@@ -1247,7 +1260,7 @@ impl Plugin {
 
 #[cfg(test)]
 mod tests {
-    use super::compose_xform;
+    use super::{compose_xform, mid_color_used, TextureKind};
 
     /// AE の行列（行ベクトル、平行移動は4行目）
     fn m(a: f64, b: f64, c: f64, d: f64, tx: f64, ty: f64) -> [f64; 16] {
@@ -1262,6 +1275,14 @@ mod tests {
             x[0] * p.0 + x[1] * p.1 + x[2],
             x[3] * p.0 + x[4] * p.1 + x[5],
         )
+    }
+
+    #[test]
+    fn mid_color_only_when_not_binary() {
+        assert!(mid_color_used(TextureKind::Smooth, false));
+        assert!(mid_color_used(TextureKind::Dot, true));
+        assert!(!mid_color_used(TextureKind::Dot, false));
+        assert!(!mid_color_used(TextureKind::Noise, false));
     }
 
     #[test]

@@ -7,6 +7,8 @@
   （README-ja.md があればそれ、無ければ README.md。リリースの計画でバージョンが Cargo.toml と合っていることを確かめている）
 - ダウンロードのリンクは各リポジトリの最新のまとめリリース（gh release view）から作る。リリースがまだ無ければ「準備中」
 - 画像はこのリポジトリのプラグインのフォルダーの docs/samples/00_overview.png があれば使う
+- web/<プラグインのフォルダー>/ があれば、そのプラグインをブラウザで試すページ（try/<フォルダー>/）も作る。
+  web/<フォルダー>/site/ のファイルを置き、crate を wasm32-unknown-unknown でビルドした .wasm を添える
 """
 import argparse
 import base64
@@ -66,6 +68,7 @@ def plugins_of(repo):
             d["readme"] = f"https://github.com/{repo}/blob/main/{d['dir']}/README.md"
             d["download"] = f"https://github.com/{repo}/releases/download/{d['archive_tag']}"
             d["image"] = None
+            d["try"] = None
             d["date"] = release_date(repo, d["archive_tag"])
             out.append(d)
     if not out:
@@ -194,6 +197,13 @@ nav a.gh:hover { color: var(--text); }
 .files .btn small { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; }
 .files .btn:hover { box-shadow: inset 0 0 0 1px var(--text); opacity: 1; }
 .files .soon { grid-column: 1 / -1; text-align: center; }
+.doc { font-size: 13px; color: var(--muted); }
+.doc:hover { color: var(--text); }
+.try { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 10px 12px;
+  border-radius: 999px; font-weight: 600; font-size: 14px; color: #fff;
+  background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 6px 18px var(--glow1); transition: transform .15s; }
+.try:hover { transform: translateY(-1px); }
+.try svg { width: 14px; height: 14px; }
 footer { margin-top: 24px; padding: 28px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px;
   display: flex; gap: 20px; flex-wrap: wrap; }
 footer a:hover { color: var(--text); }
@@ -211,10 +221,13 @@ ICON_MAC = ('<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
             '<path d="M16.4 12.6c0-2.4 2-3.5 2.1-3.6-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4'
             '-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.1-1.2 2.9-2.4.9-1.4 1.3-2.7 1.3-2.8'
             '-.1 0-2.5-1-2.5-4zM14 5.6c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z"/></svg>')
-ICON_GH = ('<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.2 19.5'
-           'c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8'
-           '.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.5 9.5 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1'
-           '.5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>')
+ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>'
+ICON_GH = ('<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 '
+           '3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23'
+           '-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07'
+           '-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27'
+           '.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 '
+           '3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>')
 
 
 def collection_head(c):
@@ -238,7 +251,7 @@ def collection_head(c):
 
 def plugin_card(p, released):
     thumb = (
-        f'<a class="thumb" href="{e(p["readme"])}"><img src="{e(p["image"])}" alt="" loading="lazy"></a>'
+        f'<a class="thumb" href="{e(p["try"] or p["readme"])}"><img src="{e(p["image"])}" alt="" loading="lazy"></a>'
         if p["image"]
         else ""
     )
@@ -250,14 +263,16 @@ def plugin_card(p, released):
             </div>"""
     else:
         files = '<div class="files"><span class="soon">準備中</span></div>'
+    try_btn = (f'<a class="try" href="{e(p["try"])}">{ICON_PLAY}ブラウザで試す</a>' if p["try"] else "")
     return f"""
         <article class="tile">
           {thumb}
           <div class="body">
-            <h3><a href="{e(p["readme"])}">{e(p["name"])}</a></h3>
+            <h3><a href="{e(p["try"] or p["readme"])}">{e(p["name"])}</a></h3>
             <div class="vline"><a class="ver" href="{e(p["tag_url"])}" title="この版のリリース">v{e(p["version"])}</a>{date}</div>
             <p>{e(p["desc"])}</p>
-            {files}
+            <a class="doc" href="{e(p["readme"])}">説明・パラメータ →</a>
+            {try_btn}{files}
           </div>
         </article>"""
 
@@ -295,6 +310,48 @@ def render(collections):
 """
 
 
+def build_wasm(crate_dir):
+    """web/<dir> の crate を wasm にビルドして .wasm のパスを返す（できなければ None）"""
+    if shutil.which("cargo") is None:
+        print(f"warning: cargo が無いので {crate_dir} の wasm を作れない")
+        return None
+    r = subprocess.run(["cargo", "build", "--release", "--target", "wasm32-unknown-unknown"],
+                       cwd=crate_dir, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        print(f"warning: {crate_dir} の wasm のビルドに失敗")
+        return None
+    target = Path(os.environ.get("CARGO_TARGET_DIR") or crate_dir / "target")
+    found = sorted((target / "wasm32-unknown-unknown" / "release").glob("*.wasm"))
+    return found[0] if found else None
+
+
+def build_try_page(p, out):
+    """ブラウザで試すページを out/try/<dir>/ に作る"""
+    crate_dir = ROOT / "web" / p["dir"]
+    site_dir = crate_dir / "site"
+    if not (site_dir / "index.html").exists():
+        return False
+    wasm = build_wasm(crate_dir)
+    if wasm is None:
+        return False
+    dest = out / "try" / p["dir"]
+    shutil.copytree(site_dir, dest)
+    shutil.copy2(wasm, dest / wasm.name)
+    page = dest / "index.html"
+    html_text = page.read_text(encoding="utf-8")
+    for k, v in {
+        "{{README}}": e(p["readme"]),
+        "{{VERSION}}": e(p["version"]),
+        "{{AEX}}": e(f'{p["download"]}/{p["stem"]}.aex'),
+        "{{PLUGIN}}": e(f'{p["download"]}/{p["stem"]}.plugin.zip'),
+        "{{ICON_WIN}}": ICON_WIN,
+        "{{ICON_MAC}}": ICON_MAC,
+    }.items():
+        html_text = html_text.replace(k, v)
+    page.write_text(html_text, encoding="utf-8")
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="_site")
@@ -316,6 +373,8 @@ def main():
                 if img.exists():
                     shutil.copy2(img, out / "img" / f"{p['dir']}.png")
                     p["image"] = f"img/{p['dir']}.png"
+                if build_try_page(p, out):
+                    p["try"] = f"try/{p['dir']}/"
         collections.append(c)
     (out / "index.html").write_text(render(collections), encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")

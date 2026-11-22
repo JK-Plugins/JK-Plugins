@@ -183,7 +183,7 @@ pub(crate) fn label_pixels(src: &[[f32; 4]], s: &Settings) -> Vec<u8> {
     // 画素ごとに独立なので、まとまった範囲ごとにスレッドで分ける
     let threads = worker_threads(src.len() / 4096);
     let per = src.len().div_ceil(threads).max(1);
-    std::thread::scope(|sc| {
+    super::par::scope(|sc| {
         for (lchunk, schunk) in labels.chunks_mut(per).zip(src.chunks(per)) {
             sc.spawn(move || {
                 let mut last: Option<([f32; 4], u8)> = None;
@@ -404,7 +404,7 @@ pub fn prepare_key(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> u64 {
     // 画素はまとまりごとにスレッドでハッシュする
     let threads = worker_threads(src.len() / 65536);
     let per = src.len().div_ceil(threads).max(1);
-    let parts: Vec<u64> = std::thread::scope(|sc| {
+    let parts: Vec<u64> = super::par::scope(|sc| {
         let hs: Vec<_> = src
             .chunks(per)
             .map(|chunk| {
@@ -432,7 +432,7 @@ pub fn prepare_key(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> u64 {
 pub fn hash_rows(rows: &[&[u8]]) -> u64 {
     let threads = worker_threads(rows.iter().map(|r| r.len()).sum::<usize>() / (1 << 20));
     let per = rows.len().div_ceil(threads).max(1);
-    let parts: Vec<u64> = std::thread::scope(|sc| {
+    let parts: Vec<u64> = super::par::scope(|sc| {
         let hs: Vec<_> = rows
             .chunks(per)
             .map(|chunk| {
@@ -548,7 +548,7 @@ pub fn prepare(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Prepared {
             distance_sq_by(bw, bh, move |x, y| labels[(y + y0) * w + x + x0] == kk)
         };
         let (d2, labels) = (&d2, &labels);
-        std::thread::scope(|sc| {
+        super::par::scope(|sc| {
             for (ci, (idx_chunk, near)) in near_idx
                 .chunks_mut(rows_per * w)
                 .zip(chunk_near.iter_mut())
@@ -635,7 +635,7 @@ pub fn shade(p: &Prepared, src: &[[f32; 4]], s: &Settings, texture: &Texture) ->
     let rows_per = h.div_ceil(threads);
     let (rank, widths, bias) = (&rank, &widths, &bias);
 
-    let parts: Vec<Vec<(u32, [f32; 4])>> = std::thread::scope(|sc| {
+    let parts: Vec<Vec<(u32, [f32; 4])>> = super::par::scope(|sc| {
         let handles: Vec<_> = (0..threads)
             .map(|ti| {
                 sc.spawn(move || {

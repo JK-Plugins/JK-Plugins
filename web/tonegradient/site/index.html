@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JK Tone Gradient を試す</title>
+<meta name="description" content="JK Tone Gradient（After Effects プラグイン）をブラウザで試す">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="back" href="../../">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>JK-Plugins
+    </a>
+    <a class="doc" href="{{README}}">説明・パラメータ</a>
+  </nav>
+
+  <header class="head">
+    <div>
+      <h1>JK Tone Gradient</h1>
+      <div class="vline"><span class="ver">v{{VERSION}}</span><span class="tag">ブラウザで試す</span></div>
+    </div>
+    <div class="dl">
+      <a class="btn" href="{{AEX}}">{{ICON_WIN}}Windows<small>.aex</small></a>
+      <a class="btn" href="{{PLUGIN}}">{{ICON_MAC}}macOS<small>.plugin</small></a>
+    </div>
+  </header>
+
+  <main class="app">
+    <section class="stage">
+      <div class="viewer" id="viewer">
+        <canvas id="canvas" width="480" height="360"></canvas>
+        <div class="loading" id="loading">読み込み中…</div>
+      </div>
+      <div class="toolbar">
+        <div class="seg" id="zoom" role="group" aria-label="拡大">
+          <button data-v="1" class="on">1×</button><button data-v="2">2×</button><button data-v="4">4×</button>
+        </div>
+        <button class="hold" id="before" title="押している間、元の画像を表示">元の画像</button>
+        <label class="file">画像を読み込む<input type="file" id="file" accept="image/*"></label>
+        <button class="ghost" id="sample">サンプル</button>
+        <span class="ms" id="ms"></span>
+      </div>
+      <div class="colors">
+        <div class="label">色の順番 <span class="hint">クリックでオン・オフ、矢印で並べ替え</span></div>
+        <div class="swatches" id="swatches"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel">
+      <div class="group">
+        <div class="row"><span class="name">Output</span>
+          <div class="seg" data-p="output"><button data-v="0" class="on">Result</button><button data-v="1">Gradient</button></div></div>
+        <div class="row"><span class="name">Width</span><input type="range" data-p="width" min="0" max="160" step="1" value="40"><output></output></div>
+        <div class="row" data-show="img"><span class="name">Tolerance</span><input type="range" data-p="tolerance" min="0" max="64" step="1" value="0"><output></output></div>
+      </div>
+
+      <div class="group">
+        <h2>Texture</h2>
+        <div class="seg wrap6" data-p="tex_kind">
+          <button data-v="0">Smooth</button><button data-v="1" class="on">Dot</button><button data-v="2">Line</button>
+          <button data-v="3">Bayer</button><button data-v="4">Grain</button><button data-v="5">Noise</button>
+        </div>
+        <div class="row" data-tex="1"><span class="name">Dot Shape</span>
+          <select data-p="dot_shape"><option value="0">Round</option><option value="1">Circle</option><option value="2">Ellipse</option><option value="3">Square</option><option value="4">Diamond</option></select></div>
+        <div class="row" data-tex="1" data-shape="2"><span class="name">Aspect</span><input type="range" data-p="aspect" min="1" max="6" step="0.1" value="2"><output></output></div>
+        <div class="row" data-tex="1 2 5"><span class="name">Size</span><input type="range" data-p="cell" min="2" max="40" step="1" value="8"><output></output></div>
+        <div class="row" data-tex="1 2 5"><span class="name">Angle</span><input type="range" data-p="angle" min="0" max="180" step="1" value="45"><output></output></div>
+        <div class="row" data-tex="3 4"><span class="name">Dither Size</span><input type="range" data-p="dither_size" min="1" max="8" step="1" value="1"><output></output></div>
+        <div class="row" data-tex="5"><span class="name">Octaves</span><input type="range" data-p="octaves" min="1" max="6" step="1" value="3"><output></output></div>
+        <div class="row" data-tex="5"><span class="name">Contrast</span><input type="range" data-p="noise_contrast" min="0" max="6" step="0.1" value="2.2"><output></output></div>
+        <div class="row" data-tex="4 5"><span class="name">Seed</span><input type="range" data-p="seed" min="0" max="99" step="1" value="0"><output></output></div>
+        <div class="row" data-tex="1 2 3 4 5"><span class="name">Invert</span><label class="sw"><input type="checkbox" data-p="invert"><span></span></label></div>
+        <div class="row" data-tex="1 2 3 4 5"><span class="name">Texture Mode</span>
+          <div class="seg" data-p="tex_mode"><button data-v="0" class="on">Threshold</button><button data-v="1">Map</button></div></div>
+        <div class="row" data-tex="1 2 3 4 5"><span class="name">Amount</span><input type="range" data-p="amount" min="0" max="100" step="1" value="100"><output></output></div>
+        <div class="row" data-tex="1 2 3 4 5" data-mode="0"><span class="name">Softness</span><input type="range" data-p="softness" min="0" max="6" step="0.1" value="0"><output></output></div>
+      </div>
+
+      <div class="group">
+        <h2>Gradient</h2>
+        <div class="row"><span class="name">Offset</span><input type="range" data-p="offset" min="-40" max="40" step="1" value="0"><output></output></div>
+        <div class="row"><span class="name">Curve</span>
+          <div class="seg" data-p="curve"><button data-v="0" class="on">Linear</button><button data-v="1">Smooth</button></div></div>
+        <div class="row"><span class="name">Curve Power</span><input type="range" data-p="curve_power" min="0.2" max="4" step="0.05" value="1"><output></output></div>
+        <div class="row"><span class="name">Reverse Order</span><label class="sw"><input type="checkbox" data-p="reverse"><span></span></label></div>
+      </div>
+
+      <div class="group">
+        <h2>Roughness</h2>
+        <div class="row"><span class="name">Roughness</span><input type="range" data-p="roughness" min="0" max="40" step="1" value="0"><output></output></div>
+        <div class="row"><span class="name">Rough Scale</span><input type="range" data-p="rough_scale" min="4" max="128" step="1" value="32"><output></output></div>
+      </div>
+
+      <div class="group" id="midgroup">
+        <h2>Mid Color</h2>
+        <p class="note" id="midnote">Texture Mode が Map（または Texture が Smooth）のときに使えます</p>
+        <div class="row"><span class="name">Mid Color</span><input type="color" data-p="mid_color" value="#ffffff"></div>
+        <div class="row"><span class="name">Mid Amount</span><input type="range" data-p="mid_amount" min="0" max="100" step="1" value="0"><output></output></div>
+        <div class="row"><span class="name">Mid Width</span><input type="range" data-p="mid_width" min="0" max="100" step="1" value="50"><output></output></div>
+      </div>
+
+      <button class="ghost reset" id="reset">初期値に戻す</button>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
