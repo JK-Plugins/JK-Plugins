@@ -10,7 +10,8 @@ use std::time::Instant;
 
 use super::curve::CurveLut;
 use super::process::{
-    biases, label_pixels, ranks, reach, widths, Curve, MidPosition, Output, OutputMode, Settings,
+    biases, label_pixels, ranks, reach, widths, Curve, Interpolation, MidPosition, Output, OutputMode,
+    Settings,
     TextureMode, MAX_NEIGHBORS, NONE,
 };
 use super::texture::{DotShape, Texture, TextureKind};
@@ -445,8 +446,13 @@ fn params_words(
         lh,
         lox as u32,
         loy as u32,
-        0,
+        match s.interpolation {
+            Interpolation::Classic => 0,
+            Interpolation::Linear => 1,
+            Interpolation::Perceptual => 2,
+        },
     ];
+    let mid = s.interpolation.encode(s.mid_color);
     let f = [
         s.origin.0 as f32,
         s.origin.1 as f32,
@@ -470,9 +476,9 @@ fn params_words(
         cdf.0,
         cdf.1,
         p.aspect,
-        s.mid_color[0],
-        s.mid_color[1],
-        s.mid_color[2],
+        mid[0],
+        mid[1],
+        mid[2],
         lx[0],
         lx[1],
         lx[2],
@@ -602,7 +608,8 @@ fn run<R>(
     let bias = biases(s, &rank);
     let mut cols = Vec::with_capacity(s.colors.len() * 8);
     for k in 0..s.colors.len() {
-        let rgb = s.colors[k].rgb;
+        // 混ぜる色は補間の色空間に移して渡す（シェーダーが混ぜた結果を戻す）
+        let rgb = s.interpolation.encode(s.colors[k].rgb);
         cols.extend_from_slice(&[rgb[0], rgb[1], rgb[2], wid[k], bias[k], rank[k], 0.0, 0.0]);
     }
     let use_tex = texture.kind() != TextureKind::Smooth && s.amount > 0.0;
@@ -833,6 +840,23 @@ mod tests {
             ..Default::default()
         };
         compare("smooth", &base, tp(TextureKind::Smooth), None);
+        for interp in [Interpolation::Linear, Interpolation::Perceptual] {
+            let s = Settings {
+                interpolation: interp,
+                mid_amount: 0.5,
+                ..base.clone()
+            };
+            compare(&format!("smooth {interp:?}"), &s, tp(TextureKind::Smooth), None);
+            compare(
+                &format!("dot map {interp:?}"),
+                &Settings {
+                    texture_mode: TextureMode::Map,
+                    ..s.clone()
+                },
+                tp(TextureKind::Dot),
+                None,
+            );
+        }
         for kind in [
             TextureKind::Dot,
             TextureKind::Line,

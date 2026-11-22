@@ -9,7 +9,7 @@ pub mod texture;
 
 pub use process::{
     hash_rows, prepare, prepare_key, prepare_key_with, process, reach, shade, Curve, Dense,
-    GroupColor, MidPosition, Output, OutputMode, Prepared, Settings, TextureMode, MAX_COLORS,
+    GroupColor, Interpolation, MidPosition, Output, OutputMode, Prepared, Settings, TextureMode, MAX_COLORS,
     MAX_NEIGHBORS, NONE,
 };
 pub use texture::{DotShape, LayerTexture, Texture, TextureKind, TextureParams};

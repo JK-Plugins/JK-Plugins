@@ -10,4 +10,4 @@ after-effects = {git = "https://github.com/virtualritz/after-effects", rev = "c7
 # premiere = {git = "https://github.com/virtualritz/after-effects", rev = "c70729a"}
 
 [target.'cfg(any(windows, target_os="macos"))'.build-dependencies]
-pipl = {git = "https://github.com/virtualritz/after-effects", rev = "c70729a"}
+pipl = {git = "https://github.com/virtualritz/after-effects", rev = "83dcc93"} # Windows の PiPL がコードページで壊れる不具合の修正（#124）を含む

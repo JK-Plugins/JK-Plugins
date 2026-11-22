@@ -11,7 +11,8 @@ mod curve_ui;
 use curve_ui::CurveData;
 
 use crate::engine::{
-    self, Curve, DotShape, GroupColor, LayerTexture, OutputMode, Prepared, Settings, Texture,
+    self, Curve, DotShape, GroupColor, Interpolation, LayerTexture, OutputMode, Prepared, Settings,
+    Texture,
     TextureKind, TextureMode, TextureParams,
 };
 
@@ -135,6 +136,7 @@ enum Params {
     CurveType,
     CurveGraph,
     CurvePower,
+    Interpolation,
     GradEnd,
 
     // --- Mid Color ---
@@ -171,6 +173,7 @@ enum Params {
 
 const TEXTURE_OPTIONS: [&str; 7] = ["Smooth", "Dot", "Line", "Bayer", "Grain", "Noise", "Layer"];
 const DOT_OPTIONS: [&str; 5] = ["Round", "Circle", "Ellipse", "Square", "Diamond"];
+const INTERP_OPTIONS: [&str; 3] = ["Classic", "Linear", "Perceptual"];
 const AA_OPTIONS: [&str; 4] = ["Off", "2x2", "4x4", "8x8"];
 const CHANNEL_OPTIONS: [&str; 5] = ["Luminance", "Alpha", "Red", "Green", "Blue"];
 
@@ -450,6 +453,12 @@ impl AdobePluginGlobal for Plugin {
                     Params::CurvePower,
                     "Curve Power",
                     float_slider(1.0, (0.05, 20.0), (0.25, 4.0), 2),
+                )?;
+                // 色の混ぜ方。Classic は従来どおり（前のプロジェクトの見た目を変えない）
+                params.add(
+                    Params::Interpolation,
+                    "Interpolation",
+                    popup(&INTERP_OPTIONS, 1),
                 )?;
                 Ok(())
             },
@@ -922,6 +931,11 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
         ],
         mid_amount: if mid_on { fs(Params::MidAmount)? / 100.0 } else { 0.0 },
         mid_width: fs(Params::MidWidth)? / 100.0,
+        interpolation: match popup(Params::Interpolation)? {
+            2 => Interpolation::Linear,
+            3 => Interpolation::Perceptual,
+            _ => Interpolation::Classic,
+        },
         output: if popup(Params::Output)? == 2 {
             OutputMode::Gradient
         } else {
@@ -1087,12 +1101,14 @@ impl Plugin {
             extra.set_returns_extra_pixels(true);
         }
 
+        // テクスチャのレイヤーを動かしたら描き直すよう、位置・スケール・回転をキャッシュのキーに混ぜる
+        // （レイヤーパラメータの画素は変わらないので、AE はそれだけでは描き直さない）。
+        // I_MIX_GUID_DEPENDENCIES を宣言しているので、Layer でないときも毎回呼ぶ必要がある
+        let mut mix = [0.0f64; 6];
         if r.tex.kind == TextureKind::Layer {
             if let Some(index) = params.index(Params::TexLayer) {
-                // テクスチャのレイヤーを動かしたら描き直すよう、位置・スケール・回転をキャッシュのキーに混ぜる
-                // （レイヤーパラメータの画素は変わらないので、AE はそれだけでは描き直さない）
                 if let Some(m) = texture_layer_xform(in_data, index as i32) {
-                    let _ = extra.callbacks().guid_mix_in_ptr(&m);
+                    mix = m;
                 }
                 // テクスチャはレイヤー全体を1枚としてタイル状に並べる
                 checkout_whole_layer(
@@ -1105,6 +1121,7 @@ impl Plugin {
                 );
             }
         }
+        let _ = extra.callbacks().guid_mix_in_ptr(&mix);
         Ok(())
     }
 

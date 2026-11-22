@@ -6,7 +6,7 @@
 
   var P = {
     width: 0, offset: 1, reverse: 2, curve: 3, curve_power: 4, amount: 5, tex_mode: 6, softness: 7,
-    roughness: 8, rough_scale: 9, mid_amount: 10, mid_color: 11, mid_width: 14,
+    roughness: 8, rough_scale: 9, mid_amount: 10, mid_color: 11, mid_width: 14, interp: 15,
     output: 16, tex_kind: 17, cell: 18, angle: 19, dot_shape: 20, aspect: 21, dither_size: 22,
     octaves: 23, noise_contrast: 24, seed: 25, invert: 26, tolerance: 27
   };

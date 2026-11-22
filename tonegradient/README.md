@@ -70,9 +70,11 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 | Curve | Linear / Smooth / Custom |
 | Curve Graph | Curve が Custom のときに使うカーブのグラフ。クリックで点を追加（近くに点があればつかむ）、ドラッグで動かし、グラフの外までドラッグして離すと消える。両端 (0,0)・(1,1) は固定で、点の間は行き過ぎない単調な曲線でつなぐ（点は最大8個）。キーフレームも打てる（点の数が同じならなめらかに変わる） |
 | Curve Power | 1 でそのまま。大きいほど境界付近が急に、小さいほど端まで残る（Custom のときは使わない） |
+| Interpolation | 色の混ぜ方。**Classic**：RGB の値をそのまま混ぜる（初期値、これまでと同じ）／**Linear**：光の強さ（リニア）に直して混ぜる（明るい側に寄る）／**Perceptual**：Oklab（人の見え方に近い色空間）で混ぜる（明るさがなめらかで、中間がくすみにくい）。色が連続して混ざるところ（Smooth や Map）で違いが出る。色は sRGB の値として扱うので、32bpc でリニアな作業用カラースペースのときは Classic がすでにリニアで混ぜたことになる |
 
 ![Curve](docs/samples/02_curve.png)
 ![Offset / Reverse](docs/samples/05_offset_reverse.png)
+![Interpolation](docs/samples/06_interpolation.png)
 
 ### Mid Color
 
