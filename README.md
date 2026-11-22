@@ -63,3 +63,23 @@ cd tonegradient
 cargo jk install
 # this is the same as `cargo jk build && cargo jk mv [plugin_path]`
 ```
+
+## Release
+
+GitHub の Actions → **Release** → **Run workflow** を押すと、全プラグインの最新版をビルドしてリリースします。
+
+- タグは今日の日付（日本時間）で自動で付きます：`vYYYY.MM.DD`（同じ日の2回目以降は `.2`, `.3` …）。
+  手で `vYYYY.MM.DD` のタグを push しても同じように動きます
+- まとめリリースには、Windows の zip（全プラグインの `.aex`）、macOS の pkg（MediaCore に全部入れる）、
+  プラグインごとの `.aex` / `.plugin.zip` を置きます
+- バージョンが新しいプラグインだけ、`<crate>-v<version>`（例：`tonegradient-v0.1.0`）の個別アーカイブも作ります
+- プラグインのバージョンは各 `Cargo.toml` の `version` だけで管理します（build.rs が読んで AE のバージョンにします。
+  AE の制限で minor と patch は 0〜15）
+- 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
+  上げ忘れとしてリリースが止まります
+
+手元で計画だけ確かめるには：
+
+```sh
+python .github/scripts/release.py plan --out dist   # dist/notes.md と dist/plan.json ができる
+```
