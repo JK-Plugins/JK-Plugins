@@ -1,8 +1,8 @@
 // 配布サイトの動き。site.py が index.html に埋め込む
 // - 検索（名前・説明・フォルダー名で絞り込み、/ キー、?q= で共有）
 // - ポスターがスクロールで下から出てくる。カーソルの方へほんの少し傾く
-// - 表紙の文字は、スクロールで少し遅れて動く
-// - 背景：灰色のドットの網がゆっくり波打つ。カーソルの近くは粒が少し大きくなる
+// - 表紙の文字は、スクロールで少し遅れて動き、カーソルの位置で少しずれる
+// - 背景は無地。カーソルの位置に大きな柔らかい光が少し遅れてついてくる（カーソル自体はふつうの矢印）
 // - 説明の改行を文節で（word-break: auto-phrase が無いブラウザは BudouX を読み込んで <wbr> を入れる）
 (() => {
   const root = document.documentElement;
@@ -52,49 +52,6 @@
     }).catch(() => {});
   }
 
-  /* ---------- 背景：ドットの網 ---------- */
-  const bg = document.querySelector('.bgfx');
-  const pointer = { x: -1e4, y: -1e4 };
-  if (bg) {
-    const g = bg.getContext('2d');
-    let W = 0, H = 0, dpr = 1;
-    const STEP = 22;
-    const size = () => {
-      dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
-      bg.width = W * dpr; bg.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    size(); addEventListener('resize', size);
-    const dark = matchMedia('(prefers-color-scheme: dark)');
-    let last = 0, visible = true;
-    document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) requestAnimationFrame(draw); });
-    function draw(now) {
-      if (!visible) return;
-      if (!RM) requestAnimationFrame(draw);
-      if (now - last < 33) return;          // 30fps で十分
-      last = now;
-      const t = RM ? 0 : now / 1000, sy = scrollY * 0.15;
-      g.clearRect(0, 0, W, H);
-      g.globalAlpha = dark.matches ? 0.16 : 0.12;
-      g.fillStyle = dark.matches ? '#f1f0ec' : '#111';
-      const oy = -(sy % STEP);
-      for (let y = oy; y < H + STEP; y += STEP) {
-        const wy = y + sy;
-        for (let x = STEP / 2; x < W; x += STEP) {
-          // ゆっくり流れる 2 つの波で粒の大きさを変える
-          let r = 0.5 + 0.5 * Math.sin(x * 0.011 + t * 0.35) * Math.cos(wy * 0.009 - t * 0.25);
-          r = 0.6 + r * r * 2.2;
-          const dx = x - pointer.x, dy = y - pointer.y, d = Math.hypot(dx, dy);
-          if (d < 160) r += (1 - d / 160) * 2.4;
-          g.beginPath(); g.arc(x, y, Math.min(r, STEP * 0.45), 0, 6.283); g.fill();
-        }
-      }
-      g.globalAlpha = 1;
-    }
-    requestAnimationFrame(draw);
-    addEventListener('pointermove', ev => { pointer.x = ev.clientX; pointer.y = ev.clientY; }, { passive: true });
-    if (RM) addEventListener('scroll', () => requestAnimationFrame(draw), { passive: true });
-  }
-
   if (RM) return;
 
   /* ---------- 出てくる（同じ行のものは少しずつずらす） ---------- */
@@ -111,16 +68,33 @@
 
   /* ---------- 表紙のパララックス ---------- */
   const hero = document.querySelector('.hero'), h1 = hero && hero.querySelector('h1');
-  let ticking = false;
-  const onScroll = () => {
-    ticking = false;
-    if (!hero) return;
+  let ticking = false, hx = 0, hy = 0;
+  const place = () => {
+    if (!hero || !h1) return;
     const y = Math.min(scrollY, hero.offsetHeight * 1.2);
-    if (h1) h1.style.transform = `translate3d(0, ${y * 0.18}px, 0)`;
+    h1.style.transform = `translate3d(${hx}px, ${y * 0.18 + hy}px, 0)`;
   };
-  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; place(); }); } }, { passive: true });
 
   if (!FINE) return;
+
+  /* ---------- カーソルの位置：背景の光・表紙の文字 ---------- */
+  const glow = document.querySelector('.glow');
+  let mx = innerWidth / 2, my = innerHeight / 3, gx = mx, gy = my, moving = false;
+  addEventListener('pointermove', ev => {
+    mx = ev.clientX; my = ev.clientY;
+    if (glow) glow.classList.add('on');
+    if (!moving) { moving = true; requestAnimationFrame(follow); }
+  }, { passive: true });
+  document.addEventListener('pointerleave', () => { if (glow) glow.classList.remove('on'); });
+  function follow() {
+    gx += (mx - gx) * 0.12; gy += (my - gy) * 0.12;
+    if (glow) { glow.style.setProperty('--gx', gx + 'px'); glow.style.setProperty('--gy', gy + 'px'); }
+    // 表紙の文字は画面の真ん中からのずれに合わせて最大 8px ほど逆へ
+    hx = (0.5 - gx / innerWidth) * 16; hy = (0.5 - gy / innerHeight) * 10;
+    place();
+    if (Math.abs(mx - gx) > 0.5 || Math.abs(my - gy) > 0.5) requestAnimationFrame(follow); else moving = false;
+  }
 
   /* ---------- ポスターがカーソルの方へ傾く ---------- */
   document.querySelectorAll('.poster').forEach(el => {

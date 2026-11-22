@@ -163,8 +163,12 @@ footer { margin-top: clamp(64px, 9vw, 120px); padding: 28px 0 56px; border-top: 
 footer .logo { font-weight: 600; letter-spacing: -.02em; font-size: 18px; color: var(--ink); margin-right: auto; display: inline-flex; gap: 8px; align-items: center; }
 footer a:hover { color: var(--ink); }
 
-/* 背景のアニメーション（ドットの網が波打つ。JS が描く） */
-.bgfx { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
+/* 背景：無地に、カーソルの位置へ少し遅れてついてくる大きな柔らかい光（JS が --gx・--gy を動かす） */
+:root { --glow: rgba(255, 255, 255, .55); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --glow: rgba(255, 255, 255, .045); } }
+.glow { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .6s;
+  background: radial-gradient(520px circle at var(--gx, 50%) var(--gy, 30%), var(--glow), transparent 70%); }
+.glow.on { opacity: 1; }
 
 /* 動き（JS が html に .fx をつけたときだけ） */
 .fx .rv { opacity: 0; transform: translateY(28px); }

@@ -317,7 +317,7 @@ def render(collections):
     {"".join(f'<a href="https://github.com/{c["repo"]}">GitHub: {e(c["title"])}</a>' for c in collections)}<a href="https://github.com/{SELF}/issues">不具合の報告</a>
   </footer>
 </div>
-<canvas class="bgfx" aria-hidden="true"></canvas>
+<div class="glow" aria-hidden="true"></div>
 <script>{js}</script>
 </body>
 </html>
