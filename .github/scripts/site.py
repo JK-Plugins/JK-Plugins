@@ -222,10 +222,10 @@ def search_key(p):
 BAND = '<div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>'
 
 
-def meta(p):
-    """リリース日と版"""
+def meta(p, mark=""):
+    """リリース日と版（mark：右端に置く小さな 5 色）"""
     date = f'<div><dt>Release</dt><dd>{e(p["date"])}</dd></div>' if p["date"] else ""
-    return f'<dl class="meta">{date}<div><dt class="sr">Version</dt><dd>v{e(p["version"])}</dd></div></dl>'
+    return f'<dl class="meta">{date}<div><dt class="sr">Version</dt><dd>v{e(p["version"])}</dd></div>{mark}</dl>'
 
 
 def poster_feature(c, p, released, no, wide=False):
@@ -255,9 +255,8 @@ def poster(c, p, released, no):
     return f"""
         <article class="poster grain rv" data-q="{e(search_key(p))}">
           <h3><a href="{e(p["readme"])}" title="説明・パラメータ" data-cur="README">{e(short_name(p["name"]))}.</a></h3>
-          {BAND}
           <p class="cap">{e(p["desc"])}</p>
-          {meta(p)}
+          {meta(p, BAND)}
           {files_html(p, released)}
           <span class="no">No. {no:03d}</span>
         </article>"""
@@ -304,7 +303,6 @@ def render(collections):
 <div class="wrap">
   <nav class="top"><span class="logo">{MARK}JK-Plugins</span><a class="gh" href="https://github.com/{SELF}">{ICON_GH}GitHub</a></nav>
   <header class="hero grain">
-    <div class="dots" aria-hidden="true"></div>
     <div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     <h1><span class="b">Plugins</span><span class="i">for After Effects<span class="p">({total})</span></span></h1>
   </header>

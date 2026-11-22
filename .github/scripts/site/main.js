@@ -1,10 +1,9 @@
 // 配布サイトの動き。site.py が index.html に埋め込む
 // - 検索（名前・説明・フォルダー名で絞り込み、/ キー、?q= で共有）
-// - ポスターがスクロールで下から出てくる。カーソルの方へ少し傾いて、光が当たる
-// - 表紙の文字とドットの網は、スクロールで違う速さで動く
-// - 背景：ラベルの 5 色のドットの網がゆっくり波打つ。カーソルの近くは粒が大きくなる
+// - ポスターがスクロールで下から出てくる。カーソルの方へほんの少し傾く
+// - 表紙の文字は、スクロールで少し遅れて動く
+// - 背景：灰色のドットの網がゆっくり波打つ。カーソルの近くは粒が少し大きくなる
 // - 説明の改行を文節で（word-break: auto-phrase が無いブラウザは BudouX を読み込んで <wbr> を入れる）
-// - カーソルは丸。リンクの上では大きくなって「README」「↓ 180 KB」などを出す
 (() => {
   const root = document.documentElement;
   const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -58,9 +57,7 @@
   const pointer = { x: -1e4, y: -1e4 };
   if (bg) {
     const g = bg.getContext('2d');
-    const css = getComputedStyle(root);
-    const pal = () => ['--c1', '--c2', '--c3', '--c4', '--c5'].map(v => css.getPropertyValue(v).trim());
-    let colors = pal(), W = 0, H = 0, dpr = 1;
+    let W = 0, H = 0, dpr = 1;
     const STEP = 22;
     const size = () => {
       dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
@@ -68,7 +65,6 @@
     };
     size(); addEventListener('resize', size);
     const dark = matchMedia('(prefers-color-scheme: dark)');
-    dark.addEventListener('change', () => { colors = pal(); });
     let last = 0, visible = true;
     document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) requestAnimationFrame(draw); });
     function draw(now) {
@@ -78,19 +74,17 @@
       last = now;
       const t = RM ? 0 : now / 1000, sy = scrollY * 0.15;
       g.clearRect(0, 0, W, H);
-      g.globalAlpha = dark.matches ? 0.3 : 0.22;
+      g.globalAlpha = dark.matches ? 0.16 : 0.12;
+      g.fillStyle = dark.matches ? '#f1f0ec' : '#111';
       const oy = -(sy % STEP);
       for (let y = oy; y < H + STEP; y += STEP) {
         const wy = y + sy;
         for (let x = STEP / 2; x < W; x += STEP) {
-          // 斜めに 5 色（帯の順）、ゆっくり流れる 2 つの波で粒の大きさを変える
-          const k = ((x * 0.6 + wy) / 260 + t * 0.05) % 5, ci = Math.floor((k + 5) % 5);
-          let r = 0.5 + 0.5 * Math.sin(x * 0.011 + t * 0.7) * Math.cos(wy * 0.009 - t * 0.5);
-          r = r * r * 4.2;
+          // ゆっくり流れる 2 つの波で粒の大きさを変える
+          let r = 0.5 + 0.5 * Math.sin(x * 0.011 + t * 0.35) * Math.cos(wy * 0.009 - t * 0.25);
+          r = 0.6 + r * r * 2.2;
           const dx = x - pointer.x, dy = y - pointer.y, d = Math.hypot(dx, dy);
-          if (d < 180) r += (1 - d / 180) * 5.5;
-          if (r < 0.35) continue;
-          g.fillStyle = colors[ci];
+          if (d < 160) r += (1 - d / 160) * 2.4;
           g.beginPath(); g.arc(x, y, Math.min(r, STEP * 0.45), 0, 6.283); g.fill();
         }
       }
@@ -116,14 +110,13 @@
   document.querySelectorAll('.rv').forEach(el => io.observe(el));
 
   /* ---------- 表紙のパララックス ---------- */
-  const hero = document.querySelector('.hero'), h1 = hero && hero.querySelector('h1'), ghost = hero && hero.querySelector('.dots');
+  const hero = document.querySelector('.hero'), h1 = hero && hero.querySelector('h1');
   let ticking = false;
   const onScroll = () => {
     ticking = false;
     if (!hero) return;
     const y = Math.min(scrollY, hero.offsetHeight * 1.2);
     if (h1) h1.style.transform = `translate3d(0, ${y * 0.18}px, 0)`;
-    if (ghost) ghost.style.transform = `translate3d(0, ${y * 0.32}px, 0) rotate(${y * 0.04}deg)`;
   };
   addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
 
@@ -133,34 +126,11 @@
   document.querySelectorAll('.poster').forEach(el => {
     el.addEventListener('pointermove', ev => {
       const r = el.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
-      const k = el.classList.contains('feature') ? 3 : 6;
+      const k = el.classList.contains('feature') ? 1 : 2.5;
       el.classList.add('tilting');
-      el.style.transform = `perspective(900px) rotateX(${(0.5 - y) * k}deg) rotateY(${(x - 0.5) * k}deg) translateY(-4px)`;
-      el.style.setProperty('--mx', x * 100 + '%');
-      el.style.setProperty('--my', y * 100 + '%');
+      el.style.transform = `perspective(900px) rotateX(${(0.5 - y) * k}deg) rotateY(${(x - 0.5) * k}deg) translateY(-2px)`;
     });
     el.addEventListener('pointerleave', () => { el.classList.remove('tilting'); el.style.transform = ''; });
   });
 
-  /* ---------- カーソル ---------- */
-  root.classList.add('fx-cursor');
-  const cur = document.createElement('div'); cur.className = 'cur'; cur.setAttribute('aria-hidden', 'true');
-  const label = document.createElement('b'); cur.appendChild(label);
-  document.body.appendChild(cur);
-  let mx = -100, my = -100, cx = -100, cy = -100;
-  addEventListener('pointermove', ev => { mx = ev.clientX; my = ev.clientY; }, { passive: true });
-  document.addEventListener('pointerleave', () => { cur.style.opacity = 0; });
-  document.addEventListener('pointerenter', () => { cur.style.opacity = 1; });
-  document.addEventListener('pointerover', ev => {
-    const t = ev.target.closest('a, button, label');
-    const text = t && t.dataset.cur;
-    cur.classList.toggle('hov', !!text);
-    label.textContent = text || '';
-  });
-  const frame = () => {
-    cx += (mx - cx) * 0.3; cy += (my - cy) * 0.3;
-    cur.style.transform = `translate3d(${cx}px, ${cy}px, 0)`;
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
 })();
