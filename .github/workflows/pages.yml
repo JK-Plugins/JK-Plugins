@@ -1,0 +1,48 @@
+# 配布サイト（GitHub Pages）を作って公開する。
+# - README のプラグイン一覧やサイトのスクリプトが main で変わったとき
+# - リリースのあと（Release ワークフローから呼ぶ）
+# - Actions の「Run workflow」ボタン
+name: Site
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - .github/scripts/site.py
+      - .github/workflows/pages.yml
+      - "*/docs/samples/00_overview.png"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/site.py --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
