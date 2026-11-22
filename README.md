@@ -4,6 +4,8 @@
 
 Those plugins are AE Plugins written by Rust.
 
+**ダウンロード：https://jk-plugins.github.io/JK-Plugins/**
+
 ## プラグイン一覧
 
 | プラグイン | バージョン | 説明 |
@@ -130,6 +132,8 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
   AE の制限で minor と patch は 0〜15）
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
   上げ忘れとしてリリースが止まります
+- リリースのあと、配布サイト（GitHub Pages）も自動で作り直します（`.github/workflows/pages.yml`。
+  中身は README のプラグイン一覧と最新のリリースから `.github/scripts/site.py` が作る）
 - `version` を上げたら、この README のプラグイン一覧のバージョン（`[版](…/releases/tag/<crate>-v<版>)`）も直します。
   合っていないとリリースが止まります。新しいプラグインを足したときは一覧に行を足します
 

@@ -129,3 +129,12 @@ jobs:
               "artifacts/windows/$stem.aex" \
               "artifacts/macos/$stem.plugin.zip"
           done
+
+  # 配布サイトのダウンロードのリンク・バージョンを新しいリリースに合わせる
+  site:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
