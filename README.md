@@ -70,9 +70,13 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
 
 - タグは今日の日付（日本時間）で自動で付きます：`vYYYY.MM.DD`（同じ日の2回目以降は `.2`, `.3` …）。
   手で `vYYYY.MM.DD` のタグを push しても同じように動きます
-- まとめリリースには、Windows のインストーラー（`-windows-setup.exe`、Inno Setup。MediaCore に全部入れ、
+- まとめリリースには、Windows のインストーラー（`-windows-setup.exe`、Inno Setup。
   「インストールされているアプリ」からアンインストールできる）と zip（全プラグインの `.aex`）、
-  macOS の pkg（MediaCore に全部入れる）、プラグインごとの `.aex` / `.plugin.zip` を置きます
+  macOS の pkg、プラグインごとの `.aex` / `.plugin.zip` を置きます
+- インストーラーと pkg は、プラグインを MediaCore の中の `JK-Plugins` フォルダーにまとめて入れます
+  （Windows：`C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\JK-Plugins`、
+  macOS：`/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore/JK-Plugins`）。
+  前の版が MediaCore の直下に入れたものは、同じプラグインが2つ読み込まれないよう消します
 - インストーラーも pkg も署名していません。Windows で「Windows によって PC が保護されました」と出たら
   「詳細情報」→「実行」、macOS ではシステム設定 → プライバシーとセキュリティ の「このまま開く」で進めます
 - バージョンが新しいプラグインだけ、`<crate>-v<version>`（例：`tonegradient-v0.1.0`）の個別アーカイブも作ります

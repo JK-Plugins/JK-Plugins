@@ -32,6 +32,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_TAG = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:\.(\d+))?$")
 MEDIACORE_MAC = "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore"
+# プラグインは MediaCore の中の JK-Plugins フォルダーにまとめて入れる（After Effects は中のフォルダーも読む）
+PLUGINS_SUBDIR = "JK-Plugins"
+PLUGINS_DIR_MAC = f"{MEDIACORE_MAC}/{PLUGINS_SUBDIR}"
 # Windows インストーラーの AppId（アップデート・アンインストールで同じアプリとして扱う。変えないこと）
 INSTALLER_APP_ID = "ac1cc6ae-3bbb-468f-a850-bb6338f627a0"
 
@@ -196,9 +199,9 @@ def cmd_plan(args):
         f"- **Windows**: `JK-Plugins-{bundle_version}-windows-setup.exe` を実行する（After Effects は終了しておく）。"
         "署名していないので「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」を押す。"
         "アンインストールは 設定 → アプリ → インストールされているアプリ の JK-Plugins から。"
-        f"インストーラーを使わないときは `JK-Plugins-{bundle_version}-windows.zip` を解凍し、中の `.aex` を "
+        f"インストーラーを使わないときは `JK-Plugins-{bundle_version}-windows.zip` を解凍し、中の `JK-Plugins` フォルダーを "
         "`C:\\Program Files\\Adobe\\Common\\Plug-ins\\7.0\\MediaCore\\` にコピーする",
-        f"- **macOS**: `JK-Plugins-{bundle_version}-macos.pkg` を開く。署名していないので最初は開けないため、"
+        f"- **macOS**: `JK-Plugins-{bundle_version}-macos.pkg` を開く（MediaCore の中の JK-Plugins フォルダーに入る）。署名していないので最初は開けないため、"
         "システム設定 → プライバシーとセキュリティ の「このまま開く」を押してからもう一度開く",
         "",
         "プラグインごとのファイル（`.aex` / `.plugin.zip`）も同じリリースに置いてある。",
@@ -243,8 +246,9 @@ def cmd_package_windows(args):
         for p in plan["plugins"]:
             run("cargo", "build", "--release", "-p", p["crate"], capture=False)
             dll = target / "release" / f"{p['lib']}.dll"
-            # まとめの zip とインストーラーの中は AE に入れるときの名前（cargo jk と同じ）
-            z.write(dll, f"{p['plugin_name']}.aex")
+            # まとめの zip とインストーラーの中は AE に入れるときの名前（cargo jk と同じ）。
+            # zip は JK-Plugins フォルダーごと MediaCore にコピーできるようにする
+            z.write(dll, f"{PLUGINS_SUBDIR}/{p['plugin_name']}.aex")
             shutil.copy2(dll, staged / f"{p['plugin_name']}.aex")
             # 個別のファイル（GitHub は空白を . に変えるのでハイフンの名前）
             shutil.copy2(dll, out / f"{p['asset_stem']}.aex")
@@ -256,6 +260,8 @@ def cmd_package_windows(args):
 # Windows のインストール先（Inno Setup の定数で書く）
 MEDIACORE_WIN = r"{commonpf64}\Adobe\Common\Plug-ins\7.0\MediaCore"
 MEDIACORE_WIN_TEXT = r"C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore"
+PLUGINS_DIR_WIN = MEDIACORE_WIN + "\\" + PLUGINS_SUBDIR
+PLUGINS_DIR_WIN_TEXT = MEDIACORE_WIN_TEXT + "\\" + PLUGINS_SUBDIR
 
 
 def find_iscc():
@@ -273,7 +279,8 @@ def find_iscc():
 
 
 def build_installer(plan, staged, out):
-    """全プラグインを MediaCore に入れるインストーラー（Inno Setup）。署名はしない。
+    """全プラグインを MediaCore の JK-Plugins フォルダーに入れるインストーラー（Inno Setup）。署名はしない。
+    前の版が MediaCore の直下に入れたファイルは消す（同じプラグインが2つ読み込まれないように）。
     アンインストーラーは Program Files の JK-Plugins に置く（MediaCore に余計な exe を置かない）"""
     version = plan["bundle_version"]
     names = ", ".join(f"{p['plugin_name']} {p['version']}" for p in plan["plugins"])
@@ -313,16 +320,21 @@ def build_installer(plan, staged, out):
         r'Name: "en"; MessagesFile: "compiler:Default.isl"',
         "",
         "[Messages]",
-        f"ja.WelcomeLabel2=After Effects 用のプラグイン（{names}）を%n{MEDIACORE_WIN_TEXT} にインストールします。"
+        f"ja.WelcomeLabel2=After Effects 用のプラグイン（{names}）を%n{PLUGINS_DIR_WIN_TEXT} にインストールします。"
         "%n%n続ける前に After Effects を終了してください。",
-        f"en.WelcomeLabel2=This installs After Effects plug-ins ({names}) into%n{MEDIACORE_WIN_TEXT}."
+        f"en.WelcomeLabel2=This installs After Effects plug-ins ({names}) into%n{PLUGINS_DIR_WIN_TEXT}."
         "%n%nPlease quit After Effects before continuing.",
         "",
-        "[Files]",
+        # 前の版が MediaCore の直下に入れたもの
+        "[InstallDelete]",
     ]
     for p in plan["plugins"]:
+        lines.append(f'Type: files; Name: "{MEDIACORE_WIN}\\{p["plugin_name"]}.aex"')
+    lines += ["", "[Files]"]
+    for p in plan["plugins"]:
         src = (staged / f"{p['plugin_name']}.aex").resolve()
-        lines.append(f'Source: "{src}"; DestDir: "{MEDIACORE_WIN}"; Flags: ignoreversion')
+        lines.append(f'Source: "{src}"; DestDir: "{PLUGINS_DIR_WIN}"; Flags: ignoreversion')
+    lines += ["", "[UninstallDelete]", f'Type: dirifempty; Name: "{PLUGINS_DIR_WIN}"']
     script = out / "installer.iss"
     # ISCC は BOM 付き UTF-8 を Unicode として読む
     script.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8-sig")
@@ -410,7 +422,7 @@ def cmd_package_macos(args):
         )
         print(f"built {bundle.name}")
 
-    # まとめの pkg：MediaCore に全部入れ、インストール後に ad-hoc 署名し直す（ntsc-rs と同じ）
+    # まとめの pkg：MediaCore/JK-Plugins に全部入れ、インストール後に ad-hoc 署名し直す（ntsc-rs と同じ）
     scripts = out / "scripts"
     if scripts.exists():
         shutil.rmtree(scripts)
@@ -419,10 +431,13 @@ def cmd_package_macos(args):
     post = scripts / "postinstall"
     post.write_text(
         "#!/bin/sh\n"
-        "# 署名していないプラグインを Apple Silicon で読み込めるよう、インストール先で ad-hoc 署名する\n"
-        f'DEST="${{2:-${{DSTROOT:-{MEDIACORE_MAC}}}}}"\n'
+        "# 署名していないプラグインを Apple Silicon で読み込めるよう、インストール先で ad-hoc 署名する。\n"
+        "# 前の版が MediaCore の直下に入れたものは、同じプラグインが2つ読み込まれないよう消す\n"
+        f'DEST="${{2:-{PLUGINS_DIR_MAC}}}"\n'
+        f'OLD="{MEDIACORE_MAC}"\n'
         f"for p in {names}; do\n"
         '  if [ -d "$DEST/$p" ]; then /usr/bin/codesign --force --deep --sign - "$DEST/$p"; fi\n'
+        '  if [ -d "$OLD/$p" ] && [ "$OLD" != "$DEST" ]; then /bin/rm -rf "$OLD/$p"; fi\n'
         "done\n"
         "exit 0\n",
         encoding="utf-8",
@@ -445,7 +460,7 @@ def cmd_package_macos(args):
         "--component-plist",
         str(comp),
         "--install-location",
-        MEDIACORE_MAC,
+        PLUGINS_DIR_MAC,
         "--scripts",
         str(scripts),
         "--identifier",
