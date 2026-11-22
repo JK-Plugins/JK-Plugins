@@ -53,7 +53,7 @@ pub struct TextureParams {
     pub kind: TextureKind,
     /// 網点・線の1周期、ノイズの粒の大きさ（px）
     pub cell: f32,
-    /// 角度（度）。すべてのテクスチャを回転する（Layerを除く）
+    /// 角度（度）。Dot・Line・Noise を回転する（Bayer・Grain・Layer は回転しない）
     pub angle_deg: f32,
     pub seed: u32,
     pub invert: bool,
@@ -296,7 +296,8 @@ impl<'a> Texture<'a> {
                 self.cdf.as_ref().unwrap().eval(s)
             }
             TextureKind::Bayer => {
-                let (u, v) = self.rot(x, y);
+                // 1粒が数px の格子を回すと、ピクセル格子とずれてモアレが出るので回転しない
+                let (u, v) = (x - self.p.offset.0, y - self.p.offset.1);
                 let e = self.p.dither_size.max(0.25);
                 let bx = (u / e).floor() as i32;
                 let by = (v / e).floor() as i32;
@@ -304,7 +305,7 @@ impl<'a> Texture<'a> {
                 (BAYER8[i] as f32 + 0.5) / 64.0
             }
             TextureKind::Grain => {
-                let (u, v) = self.rot(x, y);
+                let (u, v) = (x - self.p.offset.0, y - self.p.offset.1);
                 let e = self.p.dither_size.max(0.25);
                 hash_f((u / e).floor() as i32, (v / e).floor() as i32, self.p.seed)
             }
@@ -321,11 +322,21 @@ impl<'a> Texture<'a> {
             TextureKind::Layer => {
                 let l = self.layer.unwrap();
                 let sc = self.p.layer_scale.max(0.01);
-                let lx = ((x - self.p.offset.0) / sc).floor() as i32 - l.origin.0;
-                let ly = ((y - self.p.offset.1) / sc).floor() as i32 - l.origin.1;
-                let lx = lx.rem_euclid(l.width as i32) as usize;
-                let ly = ly.rem_euclid(l.height as i32) as usize;
-                let v = l.value[ly * l.width + lx];
+                // バイリニア補間（タイル状に繰り返す）。拡大しても角ばらない
+                let u = (x - self.p.offset.0) / sc - 0.5 - l.origin.0 as f32;
+                let v = (y - self.p.offset.1) / sc - 0.5 - l.origin.1 as f32;
+                let (u0, v0) = (u.floor(), v.floor());
+                let (fu, fv) = (u - u0, v - v0);
+                let (lw, lh) = (l.width as i32, l.height as i32);
+                let at = |xi: i32, yi: i32| -> f32 {
+                    let xi = xi.rem_euclid(lw) as usize;
+                    let yi = yi.rem_euclid(lh) as usize;
+                    l.value[yi * l.width + xi]
+                };
+                let (xi, yi) = (u0 as i32, v0 as i32);
+                let top = at(xi, yi) + (at(xi + 1, yi) - at(xi, yi)) * fu;
+                let bottom = at(xi, yi + 1) + (at(xi + 1, yi + 1) - at(xi, yi + 1)) * fu;
+                let v = top + (bottom - top) * fv;
                 let (b, w) = (self.p.layer_black, self.p.layer_white);
                 if (w - b).abs() < 1e-6 {
                     if v >= w {
@@ -456,9 +467,40 @@ mod tests {
             ..Default::default()
         };
         let t = Texture::new(p, Some(l));
-        // 2倍拡大なので (0..2, 0..2) は data[0]、(2..4, 0..2) は data[1]
-        assert!((t.threshold(1.5, 1.5) - 0.0).abs() < 1e-6);
-        assert!((t.threshold(3.5, 0.5) - 0.99999).abs() < 1e-4);
-        assert!((t.threshold(0.5, 2.5) - 0.5).abs() < 1e-6);
+        // 2倍拡大なのでテクセルの中心は (1,1)=data[0]、(3,1)=data[1]、(1,3)=data[2]
+        assert!((t.threshold(1.0, 1.0) - 0.0).abs() < 1e-6);
+        assert!((t.threshold(3.0, 1.0) - 0.99999).abs() < 1e-4);
+        assert!((t.threshold(1.0, 3.0) - 0.5).abs() < 1e-6);
+        // 中心どうしの間はバイリニア補間（0.25 と 0.75 の中間 = 0.5 → レベル補正で 0.5）
+        assert!((t.threshold(2.0, 1.0) - 0.5).abs() < 1e-6);
+        // タイル状に繰り返す（幅2テクセル = 4px）
+        assert!((t.threshold(5.0, 1.0) - t.threshold(1.0, 1.0)).abs() < 1e-6);
+    }
+
+    /// Bayer・Grain は Angle で回転しない（細かい粒を回すとモアレが出るため）
+    #[test]
+    fn bayer_and_grain_ignore_angle() {
+        for kind in [TextureKind::Bayer, TextureKind::Grain] {
+            let a = Texture::new(
+                TextureParams {
+                    kind,
+                    angle_deg: 0.0,
+                    ..Default::default()
+                },
+                None,
+            );
+            let b = Texture::new(
+                TextureParams {
+                    kind,
+                    angle_deg: 45.0,
+                    ..Default::default()
+                },
+                None,
+            );
+            for i in 0..200 {
+                let (x, y) = ((i % 20) as f32 + 0.5, (i / 20) as f32 + 0.5);
+                assert_eq!(a.threshold(x, y), b.threshold(x, y));
+            }
+        }
     }
 }

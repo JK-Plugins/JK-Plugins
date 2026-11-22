@@ -7,8 +7,8 @@
 //!
 //! `out_dir` に `<シート名>__<番号>__<ラベル>.ppm` を書き出す。
 
-use tonegradient::engine::*;
 use std::io::Write;
+use tonegradient::engine::*;
 
 const W: usize = 360;
 const H: usize = 270;
@@ -169,6 +169,19 @@ fn cases() -> Vec<Case> {
     ));
     v.push(case("00_overview", "Texture: Smooth", b(), smooth()));
     v.push(case("00_overview", "Texture: Dot", b(), dot()));
+    v.push(case(
+        "00_overview",
+        "Dot + Softness 2px",
+        Settings {
+            softness: 2.0,
+            ..b()
+        },
+        TextureParams {
+            kind: TextureKind::Dot,
+            cell: 10.0,
+            ..Default::default()
+        },
+    ));
 
     // Width
     for wd in [10.0, 40.0, 80.0] {
@@ -268,19 +281,39 @@ fn cases() -> Vec<Case> {
         v.push(c);
     }
 
-    // Mid Color
-    for a in [0.0, 0.5, 1.0] {
-        let s = Settings {
-            mid_color: [1.0, 0.55, 0.45],
-            mid_amount: a,
-            ..b()
-        };
-        v.push(case(
-            "07_mid_color",
-            &format!("Mid Amount {}%", (a * 100.0) as i32),
-            s,
-            smooth(),
-        ));
+    // Mid Color（3つ目の色としてグラデーションに入る。テクスチャも同じようにかかる）
+    let mid = |amount: f32, width: f32, pos: MidPosition| Settings {
+        mid_color: [1.0, 0.55, 0.45],
+        mid_amount: amount,
+        mid_width: width,
+        mid_position: pos,
+        ..b()
+    };
+    v.push(case(
+        "07_mid_color",
+        "Mid Amount 0%",
+        mid(0.0, 0.5, MidPosition::Core),
+        smooth(),
+    ));
+    v.push(case(
+        "07_mid_color",
+        "Mid 100% / Width 50%",
+        mid(1.0, 0.5, MidPosition::Core),
+        smooth(),
+    ));
+    v.push(case(
+        "07_mid_color",
+        "Mid 100% / Width 100%",
+        mid(1.0, 1.0, MidPosition::Core),
+        smooth(),
+    ));
+    for (lab, pos) in [
+        ("Dot / Mid 60% / Core", MidPosition::Core),
+        ("Dot / Mid 60% / Rim", MidPosition::Rim),
+    ] {
+        let mut c = case("07_mid_color", lab, mid(0.6, 0.5, pos), dot());
+        c.zoom = Some((120, 60, 120, 120));
+        v.push(c);
     }
 
     // Texture 種類
@@ -451,6 +484,76 @@ fn cases() -> Vec<Case> {
         v.push(c);
     }
 
+    // Softness（0% で網点のようにくっきり、上げるほどなめらかなグラデーション＋テクスチャのムラ）
+    let noise = TextureParams {
+        kind: TextureKind::Noise,
+        cell: 3.0,
+        octaves: 4,
+        ..Default::default()
+    };
+    for sf in [0.0f32, 1.5, 4.0] {
+        let mut c = case(
+            "18_softness",
+            &format!("Noise / Softness {sf}px"),
+            Settings {
+                softness: sf,
+                ..b()
+            },
+            noise,
+        );
+        c.zoom = Some((120, 60, 120, 120));
+        v.push(c);
+    }
+    let mut c = case(
+        "18_softness",
+        "Dot / Softness 3px",
+        Settings {
+            softness: 3.0,
+            ..b()
+        },
+        TextureParams {
+            kind: TextureKind::Dot,
+            cell: 12.0,
+            ..Default::default()
+        },
+    );
+    c.zoom = Some((120, 60, 120, 120));
+    v.push(c);
+
+    // Texture Mode：Threshold（2値）と Map（濃淡で連続的に混ぜる）
+    for (lab, kind, mode) in [
+        (
+            "Noise / Threshold",
+            TextureKind::Noise,
+            TextureMode::Threshold,
+        ),
+        ("Noise / Map", TextureKind::Noise, TextureMode::Map),
+        (
+            "Layer / Threshold",
+            TextureKind::Layer,
+            TextureMode::Threshold,
+        ),
+        ("Layer / Map", TextureKind::Layer, TextureMode::Map),
+    ] {
+        let mut c = case(
+            "20_texture_mode",
+            lab,
+            Settings {
+                texture_mode: mode,
+                ..b()
+            },
+            TextureParams {
+                kind,
+                cell: 8.0,
+                octaves: 4,
+                ..dot()
+            },
+        );
+        c.use_layer = kind == TextureKind::Layer;
+        c.zoom = Some((120, 60, 120, 120));
+        v.push(c);
+    }
+
     // Roughness
     for (lab, r, sc) in [
         ("Roughness 0", 0.0, 20.0),
@@ -525,14 +628,7 @@ fn main() {
             None
         };
         let tex = Texture::new(c.t, layer);
-        let o = process(W, H, src, &c.s, &tex);
-        let img: Vec<[f32; 4]> = o
-            .rgba
-            .iter()
-            .zip(&o.changed)
-            .zip(src.iter())
-            .map(|((p, ch), s)| if *ch { *p } else { *s })
-            .collect();
+        let img: Vec<[f32; 4]> = process(W, H, src, &c.s, &tex).to_dense(src).rgba;
         let (img, w, h) = match c.zoom {
             Some((x0, y0, zw, zh)) => {
                 let mut z = Vec::with_capacity(zw * zh);
@@ -547,7 +643,12 @@ fn main() {
         };
         let n = counter.entry(c.sheet).or_insert(0);
         *n += 1;
-        let name = format!("{}__{:02}__{}.ppm", c.sheet, n, c.label.replace('/', "／"));
+        let name = format!(
+            "{}__{:02}__{}.ppm",
+            c.sheet,
+            n,
+            c.label.replace('/', "／").replace(':', "：")
+        );
         save(&dir.join(name), w, h, &img);
     }
 }
