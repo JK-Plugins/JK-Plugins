@@ -2,7 +2,7 @@
 // - 検索（名前・説明・フォルダー名で絞り込み、/ キー、?q= で共有）
 // - ポスターがスクロールで下から出てくる。カーソルの方へ少し傾いて、光が当たる（大きいのも小さいのも同じ）
 // - 表紙の文字は、スクロールで少し遅れて動き、カーソルの位置で少しずれる
-// - 背景：カーソルの通ったところに ASCII の文字の粒（@ # * + : .）が散って、薄くなりながら消える（カーソル自体はふつうの矢印）
+// - 背景：カーソルの通ったところに ASCII の文字の粒（@ # * + : .）が散り、重力で落ちながら薄くなって消える（カーソル自体はふつうの矢印）
 // - 説明の改行を文節で（word-break: auto-phrase が無いブラウザは BudouX を読み込んで <wbr> を入れる）
 (() => {
   const root = document.documentElement;
@@ -102,7 +102,7 @@
     if (parts.length >= MAX) parts.shift();
     // 升目にそろえて置く（文字の画面のように）
     parts.push({ x: Math.round(x / 9) * 9, y: Math.round(y / FS) * FS, vx: vx * 0.04 + (Math.random() - 0.5) * 0.6,
-      vy: vy * 0.04 + (Math.random() - 0.5) * 0.6 - 0.15, life: 1, decay: 0.006 + Math.random() * 0.01 });
+      vy: vy * 0.03 - 0.6 - Math.random() * 1.6, life: 1, decay: 0.006 + Math.random() * 0.01 });
   }
   function tick() {
     g.clearRect(0, 0, W, H);
@@ -111,7 +111,8 @@
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
       p.life -= p.decay; if (p.life <= 0) { parts.splice(i, 1); continue; }
-      p.x += p.vx; p.y += p.vy; p.vx *= 0.97; p.vy *= 0.97;
+      // 重力：少し跳ねてから落ちていく
+      p.vy += 0.09; p.vx *= 0.98; p.x += p.vx; p.y += p.vy;
       const ch = RAMP[Math.min(RAMP.length - 1, Math.floor((1 - p.life) * RAMP.length))];
       g.globalAlpha = Math.min(1, p.life * 1.3) * 0.7;
       g.fillText(ch, Math.round(p.x / 9) * 9, Math.round(p.y / FS) * FS);
