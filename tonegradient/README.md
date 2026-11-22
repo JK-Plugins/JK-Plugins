@@ -115,6 +115,12 @@ Tolerance を上げすぎると、線のアンチエイリアス部分まで近�
 
 ![Roughness](docs/samples/16_roughness.png)
 
+### Render
+
+| 名前 | 内容 |
+|---|---|
+| Render | GPU（初期値）/ CPU。距離変換と色の合成を GPU（DirectX 12・Vulkan・Metal）で行う。結果は CPU と同じ。GPU が使えないときは自動で CPU |
+
 ## ビルド
 
 ```sh
@@ -176,6 +182,9 @@ python tools/aexcompat_check.py <AEXCompat のリポジトリ> <tonegradient.aex
   テクスチャ・Amount・Curve・Mid Color などだけを変えたときは距離変換を飛ばす。
   4色・1920×1080・Width 60 の目安（20スレッドの環境）：準備（ラベル付け・距離変換）約30ms、
   色の合成 約9〜17ms（Antialias 4x4 では約45〜60ms）。キャッシュが当たると準備を飛ばす。
+  GPU（RTX 3060 Ti）では距離変換も GPU で行い（CPU はラベル付けだけ）、入力が変わったフレームで
+  全体 約15ms、テクスチャなどだけを変えたときは 約7〜10ms（Antialias 4x4 でも約9ms）。
+  GPU の初期化は最初の1回だけ約0.4秒
   `cargo run --release --example bench -- <Width>` で測れる
 - `Use n` がオフのスロットの項目はグレーアウトする
 - パラメータの並びを v0.0.1 から変えたので、v0.0.1 で作ったプロジェクトの設定は引き継げない

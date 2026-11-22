@@ -34,6 +34,7 @@ SLOT = {
     "Softness": 257,
     "Texture Size": 258,
     "Antialias": 267,
+    "Render": 273,
 }
 
 TEXTURES = ["Smooth", "Dot", "Line", "Bayer", "Grain", "Noise", "Layer"]
@@ -47,6 +48,7 @@ POPUP_CHOICES = {
     "Curve": 3,
     "Mid Position": 2,
     "Antialias": 4,
+    "Render": 2,
 }
 
 
@@ -101,6 +103,9 @@ def cases(out):
         ("Noise / Map", [param("Texture", 6), param("Width", 120), param("Texture Size", 8), param("Texture Mode", 2)]),
         ("Dot / Mid Color", [param("Width", 120), param("Mid Amount", 80)]),
         ("Texture Layer", [param("Texture", 7), param("Width", 800), param("Texture Layer", 0, "layer", layer)]),
+        # GPU と CPU で同じ結果になるか（初期値は GPU）
+        ("Dot / AA 4x4 / CPU", [param("Width", 120), param("Antialias", 3), param("Render", 2)]),
+        ("Dot / AA 4x4 / GPU", [param("Width", 120), param("Antialias", 3), param("Render", 1)]),
     ]
 
 

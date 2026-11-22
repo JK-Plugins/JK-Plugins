@@ -1,6 +1,8 @@
 //! AEに依存しないコア処理。単体でテストできる。
 pub mod curve;
 pub mod edt;
+#[cfg(any(windows, target_os = "macos"))]
+pub mod gpu;
 pub mod process;
 pub mod texture;
 

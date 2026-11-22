@@ -231,6 +231,17 @@ fn spot_fn(shape: DotShape, aspect: f32) -> impl Fn(f32, f32) -> f32 {
     }
 }
 
+/// GPU に渡すための中身（`Texture::gpu_view`）
+pub(crate) struct TextureGpuView<'a> {
+    pub p: TextureParams,
+    pub cos_a: f32,
+    pub sin_a: f32,
+    pub inv_cell: f32,
+    /// 網点・線の分布表（最小値、1/範囲、表）
+    pub cdf: Option<(f32, f32, &'a [f32])>,
+    pub layer: Option<LayerTexture<'a>>,
+}
+
 pub struct Texture<'a> {
     p: TextureParams,
     layer: Option<LayerTexture<'a>>,
@@ -264,6 +275,21 @@ impl<'a> Texture<'a> {
 
     pub fn kind(&self) -> TextureKind {
         self.p.kind
+    }
+
+    /// GPU に渡すための中身（回転・セル・分布表・レイヤー）
+    pub(crate) fn gpu_view(&self) -> TextureGpuView<'_> {
+        TextureGpuView {
+            p: self.p,
+            cos_a: self.cos_a,
+            sin_a: self.sin_a,
+            inv_cell: self.inv_cell,
+            cdf: self
+                .cdf
+                .as_ref()
+                .map(|c| (c.min, c.inv_range, c.table.as_slice())),
+            layer: self.layer,
+        }
     }
 
     /// 回転（ずらしを引いてから）。セル単位にはしない

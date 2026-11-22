@@ -106,6 +106,11 @@ impl CurveLut {
         Self { v }
     }
 
+    /// 表の値（LUT_SIZE + 1 個）。GPU に渡す
+    pub(crate) fn values(&self) -> &[f32] {
+        &self.v
+    }
+
     #[inline]
     pub fn eval(&self, t: f32) -> f32 {
         let f = t.clamp(0.0, 1.0) * LUT_SIZE as f32;

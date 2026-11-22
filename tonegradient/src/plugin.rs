@@ -22,8 +22,7 @@ static CACHE: Mutex<Vec<(u64, Arc<Prepared>)>> = Mutex::new(Vec::new());
 const CACHE_ENTRIES: usize = 4;
 const CACHE_MAX_BYTES: usize = 512 << 20;
 
-fn prepared(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc<Prepared> {
-    let key = engine::prepare_key(w, h, src, s);
+fn prepared(key: u64, w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc<Prepared> {
     if let Ok(mut cache) = CACHE.lock() {
         if let Some(pos) = cache.iter().position(|(k, _)| *k == key) {
             let hit = cache.remove(pos);
@@ -49,6 +48,26 @@ fn prepared(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc<Prepared>
         cache.truncate(keep);
     }
     p
+}
+
+/// 距離変換と色の合成。GPU を選んでいて使えるときは GPU（距離変換も GPU）、
+/// 使えない・失敗したときは CPU
+fn render(
+    use_gpu: bool,
+    w: usize,
+    h: usize,
+    src: &[[f32; 4]],
+    s: &Settings,
+    texture: &Texture,
+) -> engine::Output {
+    let key = engine::prepare_key(w, h, src, s);
+    if use_gpu {
+        if let Ok(o) = engine::gpu::render(w, h, src, key, s, texture) {
+            return o;
+        }
+    }
+    let p = prepared(key, w, h, src, s);
+    engine::shade(&p, src, s, texture)
 }
 
 fn layout(in_data: &InData, layer: &ae::Layer) -> Layout {
@@ -134,6 +153,9 @@ enum Params {
     Roughness,
     RoughScale,
     RoughEnd,
+
+    // --- 計算に使うもの ---
+    Render,
 }
 
 const TEXTURE_OPTIONS: [&str; 7] = ["Smooth", "Dot", "Line", "Bayer", "Grain", "Noise", "Layer"];
@@ -534,6 +556,9 @@ impl AdobePluginGlobal for Plugin {
             },
         )?;
 
+        // GPU で色を合成する（使えないときは自動で CPU）。結果は同じ
+        params.add(Params::Render, "Render", popup(&["GPU", "CPU"], 1))?;
+
         // カーブのグラフ（Curve Graph）を描くためのカスタム UI
         in_data
             .interact()
@@ -678,6 +703,8 @@ struct Read {
     tex: TextureParams,
     /// Layer Channel のポップアップ値（1 = 輝度）
     layer_channel: i32,
+    /// GPU で合成する
+    use_gpu: bool,
 }
 
 fn downsample(in_data: &InData) -> f32 {
@@ -817,6 +844,7 @@ fn read_params(in_data: &InData, params: &ae::Parameters<Params>) -> Result<Read
         settings,
         tex,
         layer_channel: popup(Params::LayerChannel)?,
+        use_gpu: popup(Params::Render)? == 1,
     })
 }
 
@@ -1003,6 +1031,7 @@ impl Plugin {
             mut settings,
             tex,
             layer_channel,
+            use_gpu,
         } = read_params(in_data, params)?;
 
         let (iw, ih) = (input.width(), input.height());
@@ -1037,8 +1066,7 @@ impl Plugin {
         };
         let texture = Texture::new(tex, layer_tex);
 
-        let prepared = prepared(iw, ih, &src, &settings);
-        let result = engine::shade(&prepared, &src, &settings, &texture);
+        let result = render(use_gpu, iw, ih, &src, &settings, &texture);
         drop(src);
 
         // 出力ワールドと入力ワールドの位置合わせ（原点の差）

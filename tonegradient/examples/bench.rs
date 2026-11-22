@@ -120,7 +120,9 @@ fn main() {
             },
         ),
     ];
-    for (name, s, tp) in cases {
+    for (ci, (name, s, tp)) in cases.into_iter().enumerate() {
+        // ケースごとにキーを変えて、毎回1回目に準備の結果を送る時間を測る
+        let key = key ^ (ci as u64 + 1);
         let tex = Texture::new(tp, None);
         let _ = shade(&p, &src, &s, &tex);
         let t = Instant::now();
@@ -129,10 +131,28 @@ fn main() {
         for _ in 0..n {
             changed = shade(&p, &src, &s, &tex).changed.len();
         }
-        println!(
-            "shade {:<11} {:>7.1} ms (changed {changed})",
-            name,
-            t.elapsed().as_secs_f64() * 1e3 / n as f64
-        );
+        let cpu_ms = t.elapsed().as_secs_f64() * 1e3 / n as f64;
+        // GPU：1回目は距離変換から（入力が変わったフレーム）、2回目以降は使い回す
+        let gpu = gpu::render_timed(w, h, &src, key, &s, &tex).map(|(_, t)| t);
+        let gpu_avg = (0..n)
+            .map(|_| gpu::render_timed(w, h, &src, key, &s, &tex).map(|(_, t)| t))
+            .collect::<Result<Vec<_>, _>>();
+        match (gpu, gpu_avg) {
+            (Ok(first), Ok(v)) => {
+                let run = v.iter().map(|t| t.run).sum::<f64>() / n as f64;
+                let unpack = v.iter().map(|t| t.unpack).sum::<f64>() / n as f64;
+                println!(
+                    "shade {:<11} CPU {:>6.1} ms | GPU {:>5.1} ms (計算+転送 {run:.1} + 展開 {unpack:.1}) | 入力が変わったとき GPU 全体 {:.1} ms（ラベル {:.1}）(changed {changed})",
+                    name,
+                    cpu_ms,
+                    run + unpack,
+                    first.labels + first.run + first.unpack,
+                    first.labels
+                );
+            }
+            (Err(e), _) | (_, Err(e)) => {
+                println!("shade {:<11} CPU {:>6.1} ms | GPU なし: {e}", name, cpu_ms);
+            }
+        }
     }
 }

@@ -177,7 +177,7 @@ impl Output {
     }
 }
 
-fn label_pixels(src: &[[f32; 4]], s: &Settings) -> Vec<u8> {
+pub(crate) fn label_pixels(src: &[[f32; 4]], s: &Settings) -> Vec<u8> {
     let alpha_min = s.alpha_threshold.clamp(0.0, 1.0) - 0.5 / 255.0;
     let mut labels = vec![NONE; src.len()];
     // 画素ごとに独立なので、まとまった範囲ごとにスレッドで分ける
@@ -297,7 +297,7 @@ fn map_step(a: f32, t: f32, k: f32) -> f32 {
 }
 
 /// 並び順（反転できる）。網点の積み上げ・Offset・確認表示に使う
-fn ranks(s: &Settings) -> Vec<f32> {
+pub(crate) fn ranks(s: &Settings) -> Vec<f32> {
     let nc = s.colors.len();
     (0..nc)
         .map(|k| {
@@ -311,7 +311,7 @@ fn ranks(s: &Settings) -> Vec<f32> {
 }
 
 /// 色ごとの幅（Width × Spread）
-fn widths(s: &Settings) -> Vec<f32> {
+pub(crate) fn widths(s: &Settings) -> Vec<f32> {
     s.colors
         .iter()
         .map(|c| (s.width * c.spread.max(0.0)).max(0.0))
@@ -321,7 +321,7 @@ fn widths(s: &Settings) -> Vec<f32> {
 /// 色ごとのバイアス（符号付き距離に足す。小さいほどその色が広がる）。
 /// どのピクセルから見ても同じ値なので、重みは位置に対して連続になる。
 /// 2色の境界は (bias_b - bias_a) / 2 だけ b 側へ進む → Grow は 2倍して引く
-fn biases(s: &Settings, rank: &[f32]) -> Vec<f32> {
+pub(crate) fn biases(s: &Settings, rank: &[f32]) -> Vec<f32> {
     let nc = s.colors.len();
     (0..nc)
         .map(|k| 2.0 * s.offset * (rank[k] - (nc as f32 - 1.0) * 0.5) - 2.0 * s.colors[k].grow)

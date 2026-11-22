@@ -20,6 +20,9 @@ log = "0.4.26"
 win_dbg_logger = "0.1.0"
 # カーブの点（arbitrary data）の保存
 serde = { version = "1.0", features = ["derive"] }
+# GPU で色の合成をする（使えないときは CPU）
+wgpu = "23.0"
+pollster = "0.4"
 
 [target.'cfg(any(windows, target_os="macos"))'.build-dependencies]
 pipl = {git = "https://github.com/virtualritz/after-effects", rev = "c70729a"}
