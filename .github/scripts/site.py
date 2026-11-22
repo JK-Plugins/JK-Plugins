@@ -191,6 +191,7 @@ nav a.gh:hover { color: var(--text); }
 .files { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .files .btn { padding: 9px 12px; font-size: 13px; background: transparent; color: var(--text);
   box-shadow: inset 0 0 0 1px var(--line); }
+.files .btn small { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; }
 .files .btn:hover { box-shadow: inset 0 0 0 1px var(--text); opacity: 1; }
 .files .soon { grid-column: 1 / -1; text-align: center; }
 footer { margin-top: 24px; padding: 28px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px;
@@ -244,8 +245,8 @@ def plugin_card(p, released):
     date = f'<span class="date">{e(p["date"])}</span>' if p["date"] else ""
     if released:
         files = f"""<div class="files">
-              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.aex" title="{e(p["stem"])}.aex">{ICON_WIN}Windows</a>
-              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.plugin.zip" title="{e(p["stem"])}.plugin.zip">{ICON_MAC}macOS</a>
+              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.aex" title="{e(p["stem"])}.aex">{ICON_WIN}Windows<small>.aex</small></a>
+              <a class="btn" href="{e(p["download"])}/{e(p["stem"])}.plugin.zip" title="{e(p["stem"])}.plugin.zip">{ICON_MAC}macOS<small>.plugin</small></a>
             </div>"""
     else:
         files = '<div class="files"><span class="soon">準備中</span></div>'
