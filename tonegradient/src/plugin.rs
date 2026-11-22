@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use after_effects as ae;
 
-use crate::world_io::{compose, read_world, Layout, Rows, Source};
+use crate::world_io::{compose, read_world, Changes, Layout, Rows, Source};
 
 mod curve_ui;
 use curve_ui::CurveData;
@@ -50,24 +50,35 @@ fn prepared(key: u64, w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc
     p
 }
 
-/// 距離変換と色の合成。GPU を選んでいて使えるときは GPU（距離変換も GPU）、
-/// 使えない・失敗したときは CPU
-fn render(
+/// 距離変換と色の合成をして、`write` で出力に書き込む。
+/// GPU を選んでいて使えるときは GPU（読み戻した全画素をそのまま書き込む）、
+/// 使えない・失敗したときは CPU（変わった画素の並びを書き込む）
+/// 入力の画素 `src` は必要なとき（距離変換をやり直すとき・CPU で合成するとき）だけ読む。
+/// `key` は入力の画素と設定から作ったキャッシュのキー
+#[allow(clippy::too_many_arguments)]
+fn render_into(
     use_gpu: bool,
     w: usize,
     h: usize,
-    src: &[[f32; 4]],
+    src: impl Fn() -> Vec<[f32; 4]>,
+    key: u64,
     s: &Settings,
     texture: &Texture,
-) -> engine::Output {
-    let key = engine::prepare_key(w, h, src, s);
+    mut write: impl FnMut(Changes),
+) {
     if use_gpu {
-        if let Ok(o) = engine::gpu::render(w, h, src, key, s, texture) {
-            return o;
+        let done = engine::gpu::render_with(w, h, &src, key, s, texture, |px| match px {
+            Some(px) => write(Changes::Dense(px)),
+            None => write(Changes::List(&[])),
+        });
+        if done.is_ok() {
+            return;
         }
     }
-    let p = prepared(key, w, h, src, s);
-    engine::shade(&p, src, s, texture)
+    let src = src();
+    let p = prepared(key, w, h, &src, s);
+    let out = engine::shade(&p, &src, s, texture);
+    write(Changes::List(&out.changed));
 }
 
 fn layout(in_data: &InData, layer: &ae::Layer) -> Layout {
@@ -1036,7 +1047,26 @@ impl Plugin {
 
         let (iw, ih) = (input.width(), input.height());
         let in_layout = layout(in_data, input);
-        let src = world_to_f32(input, in_layout);
+        // キャッシュのキーは入力のバイト列から作る（キャッシュが効けば画素を float にしない）
+        let key = {
+            let rows = rows_of(input);
+            let n = iw * in_layout.bytes_per_pixel();
+            let buf = if iw == 0 || ih == 0 {
+                &[][..]
+            } else {
+                input.buffer()
+            };
+            let lines: Vec<&[u8]> = (0..ih)
+                .map(|y| &buf[rows.start(y)..rows.start(y) + n])
+                .collect();
+            engine::prepare_key_with(
+                iw,
+                ih,
+                &settings,
+                engine::hash_rows(&lines) ^ (in_layout as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+            )
+        };
+        let src = || world_to_f32(input, in_layout);
         let in_origin = input.origin();
         settings.origin = (in_origin.h, in_origin.v);
 
@@ -1066,9 +1096,6 @@ impl Plugin {
         };
         let texture = Texture::new(tex, layer_tex);
 
-        let result = render(use_gpu, iw, ih, &src, &settings, &texture);
-        drop(src);
-
         // 出力ワールドと入力ワールドの位置合わせ（原点の差）
         let out_origin = output.origin();
         let dx = out_origin.h - in_origin.h;
@@ -1092,16 +1119,10 @@ impl Plugin {
             layout: in_layout,
         };
         let out_rows = rows_of(output);
-        compose(
-            &source,
-            output.buffer_mut(),
-            out_rows,
-            ow,
-            out_layout,
-            dx,
-            dy,
-            &result.changed,
-        );
+        let out_buf = output.buffer_mut();
+        render_into(use_gpu, iw, ih, src, key, &settings, &texture, |changes| {
+            compose(&source, out_buf, out_rows, ow, out_layout, dx, dy, changes)
+        });
         Ok(())
     }
 }

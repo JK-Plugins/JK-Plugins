@@ -1,6 +1,7 @@
 //! 処理時間の目安を測る（cargo run --release --example bench）
 use std::time::Instant;
 use tonegradient::engine::*;
+use tonegradient::world_io::{compose, encode, read_world, Changes, Layout, Rows, Source};
 
 fn main() {
     let width: f32 = std::env::args()
@@ -155,4 +156,109 @@ fn main() {
             }
         }
     }
+
+    // 出力（8bpc）へ書き込むまでの全体：変わった画素の並びを作る方法と、読み戻した全画素から直接書く方法
+    let layout = Layout::Argb8;
+    let mut in_buf = vec![0u8; w * h * 4];
+    for (i, p) in src.iter().enumerate() {
+        encode(layout, *p, &mut in_buf[i * 4..i * 4 + 4]);
+    }
+    let rows = Rows {
+        stride: w * 4,
+        flip: false,
+        h,
+    };
+    let input = Source {
+        buf: &in_buf,
+        rows,
+        w,
+        layout,
+    };
+    let mut out = vec![0u8; w * h * 4];
+    let s = Settings {
+        aa_samples: 4,
+        ..base()
+    };
+    let tex = Texture::new(
+        TextureParams {
+            kind: TextureKind::Dot,
+            ..Default::default()
+        },
+        None,
+    );
+    let n = 5;
+    let _ = gpu::render(w, h, &src, key, &s, &tex);
+    let t = Instant::now();
+    for _ in 0..n {
+        let o = gpu::render(w, h, &src, key, &s, &tex).unwrap();
+        compose(
+            &input,
+            &mut out,
+            rows,
+            w,
+            layout,
+            0,
+            0,
+            Changes::List(&o.changed),
+        );
+    }
+    println!(
+        "出力まで dot aa4  GPU（並びを作る） {:>6.1} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
+    let t = Instant::now();
+    for _ in 0..n {
+        gpu::render_with(
+            w,
+            h,
+            || src.clone(),
+            key,
+            &s,
+            &tex,
+            |px| {
+                let c = px.map_or(Changes::List(&[]), Changes::Dense);
+                compose(&input, &mut out, rows, w, layout, 0, 0, c)
+            },
+        )
+        .unwrap();
+    }
+    println!(
+        "出力まで dot aa4  GPU（直接書く）   {:>6.1} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
+    let t = Instant::now();
+    for _ in 0..n {
+        let o = shade(&p, &src, &s, &tex);
+        compose(
+            &input,
+            &mut out,
+            rows,
+            w,
+            layout,
+            0,
+            0,
+            Changes::List(&o.changed),
+        );
+    }
+    println!(
+        "出力まで dot aa4  CPU（準備済み）   {:>6.1} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
+    let t = Instant::now();
+    for _ in 0..n {
+        std::hint::black_box(read_world(&in_buf, rows, w, layout));
+    }
+    println!(
+        "入力の読み込み（8bpc → float）     {:>6.1} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
+    let lines: Vec<&[u8]> = in_buf.chunks(w * 4).collect();
+    let t = Instant::now();
+    for _ in 0..n {
+        std::hint::black_box(hash_rows(&lines));
+    }
+    println!(
+        "キーのハッシュ（8bpc のバイト列）  {:>6.1} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
 }

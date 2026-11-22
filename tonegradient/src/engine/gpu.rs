@@ -500,18 +500,39 @@ pub fn render_timed(
     texture: &Texture,
 ) -> Result<(Output, Timing), String> {
     assert_eq!(src.len(), w * h);
+    render_with(
+        w,
+        h,
+        || src.to_vec(),
+        key,
+        s,
+        texture,
+        |px| Output {
+            changed: px.map_or_else(Vec::new, |px| unpack(px, src)),
+        },
+    )
+}
+
+/// `render` と同じ計算をして、読み戻した全画素（w：0 = 変更なし、1 = 変更でアルファは入力のまま、
+/// 2 = 変更でアルファ 1）を `f` に渡す。変わった画素の並びを作らずに、そのまま出力へ書き込める。
+/// 合成するものが無いときは `None` を渡す。
+/// 入力の画素 `src` は距離変換をやり直すとき（キャッシュが効かないとき）だけ読む。
+pub fn render_with<R>(
+    w: usize,
+    h: usize,
+    src: impl FnOnce() -> Vec<[f32; 4]>,
+    key: u64,
+    s: &Settings,
+    texture: &Texture,
+    f: impl FnOnce(Option<&[[f32; 4]]>) -> R,
+) -> Result<(R, Timing), String> {
     if s.colors.len() < 2 || w == 0 || h == 0 {
-        return Ok((
-            Output {
-                changed: Vec::new(),
-            },
-            Timing::default(),
-        ));
+        return Ok((f(None), Timing::default()));
     }
     let m = ctx()?;
     let mut c = m.lock().map_err(|_| "GPU のロックが壊れています")?;
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run(&mut c, w, h, src, key, s, texture)
+        run(&mut c, w, h, src, key, s, texture, f)
     })) {
         Ok(Ok(r)) => Ok(r),
         Ok(Err(e)) => {
@@ -529,15 +550,17 @@ pub fn render_timed(
     }
 }
 
-fn run(
+#[allow(clippy::too_many_arguments)]
+fn run<R>(
     c: &mut Ctx,
     w: usize,
     h: usize,
-    src: &[[f32; 4]],
+    src: impl FnOnce() -> Vec<[f32; 4]>,
     key: u64,
     s: &Settings,
     texture: &Texture,
-) -> Result<(Output, Timing), String> {
+    f: impl FnOnce(Option<&[[f32; 4]]>) -> R,
+) -> Result<(R, Timing), String> {
     let mut timing = Timing::default();
     let n = w * h;
     let t = Instant::now();
@@ -554,17 +577,18 @@ fn run(
         .as_ref()
         .is_some_and(|b| b.key == key && b.w == w && b.h == h);
     if !hit {
-        c.encode_prepare(&mut enc, key, w, h, src, s, &mut timing)?;
+        let src = src();
+        if src.len() != w * h {
+            let _ = c.device.pop_error_scope();
+            let _ = c.device.pop_error_scope();
+            return Err("入力の大きさが合いません".into());
+        }
+        c.encode_prepare(&mut enc, key, w, h, &src, s, &mut timing)?;
     }
     if c.prepared.as_ref().unwrap().empty {
         let _ = c.device.pop_error_scope();
         let _ = c.device.pop_error_scope();
-        return Ok((
-            Output {
-                changed: Vec::new(),
-            },
-            timing,
-        ));
+        return Ok((f(None), timing));
     }
 
     let rank = ranks(s);
@@ -659,19 +683,21 @@ fn run(
     timing.run = t.elapsed().as_secs_f64() * 1e3 - timing.labels;
 
     let t = Instant::now();
-    let changed = {
+    let r = {
         let data = slice.get_mapped_range();
         let bytes: &[u8] = &data;
         // SAFETY: 読み戻したバッファは 16 バイト単位に並んだ vec4<f32>（境界が合わないときは止める）
         let (pre, px, _) = unsafe { bytes.align_to::<[f32; 4]>() };
-        if !pre.is_empty() {
-            return Err("読み戻したデータの境界が合いません".into());
+        if pre.is_empty() {
+            Some(f(Some(&px[..n])))
+        } else {
+            None
         }
-        unpack(&px[..n], src)
     };
     read_b.unmap();
+    let r = r.ok_or("読み戻したデータの境界が合いません")?;
     timing.unpack = t.elapsed().as_secs_f64() * 1e3;
-    Ok((Output { changed }, timing))
+    Ok((r, timing))
 }
 
 /// 出力（w：0 = 変更なし、1 = 入力のアルファ、2 = アルファ 1）を変わった画素の並びにする

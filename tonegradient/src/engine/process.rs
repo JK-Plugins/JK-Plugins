@@ -401,21 +401,7 @@ impl KeyHasher {
 /// `prepare` の結果を決める値だけから作るキー。
 /// 入力の画素・色の判定に関わる設定・届く距離・混ぜる色の数が同じなら同じになる。
 pub fn prepare_key(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> u64 {
-    let mut k = KeyHasher(0x243f_6a88_85a3_08d3);
-    k.add(w as u64);
-    k.add(h as u64);
-    k.add(s.colors.len() as u64);
-    for c in &s.colors {
-        for v in c.rgb {
-            k.add_f32(v);
-        }
-        k.add_f32(c.tolerance);
-    }
-    k.add_f32(s.tolerance);
-    k.add_f32(s.alpha_threshold);
-    k.add_f32(reach(s));
-    k.add(s.max_neighbors.clamp(1, MAX_NEIGHBORS) as u64);
-    // 画素はまとまりごとにスレッドでハッシュし、順番どおりに混ぜる
+    // 画素はまとまりごとにスレッドでハッシュする
     let threads = worker_threads(src.len() / 65536);
     let per = src.len().div_ceil(threads).max(1);
     let parts: Vec<u64> = std::thread::scope(|sc| {
@@ -434,10 +420,65 @@ pub fn prepare_key(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> u64 {
             .collect();
         hs.into_iter().map(|h| h.join().unwrap()).collect()
     });
-    k.add(parts.len() as u64);
+    let mut k = KeyHasher(0x0a2e_0370);
     for v in parts {
         k.add(v);
     }
+    prepare_key_with(w, h, s, k.0)
+}
+
+/// 画素のバイト列（行ごと）のハッシュ。`prepare_key_with` に渡すと、画素を float にしなくても
+/// キーが作れる（同じ画像は同じキーになる。`prepare_key` とは値が違う）
+pub fn hash_rows(rows: &[&[u8]]) -> u64 {
+    let threads = worker_threads(rows.iter().map(|r| r.len()).sum::<usize>() / (1 << 20));
+    let per = rows.len().div_ceil(threads).max(1);
+    let parts: Vec<u64> = std::thread::scope(|sc| {
+        let hs: Vec<_> = rows
+            .chunks(per)
+            .map(|chunk| {
+                sc.spawn(move || {
+                    let mut h = KeyHasher(0x2452_821e_638d_0137);
+                    for row in chunk {
+                        let mut it = row.chunks_exact(8);
+                        for c in &mut it {
+                            h.add(u64::from_le_bytes(c.try_into().unwrap()));
+                        }
+                        let mut last = [0u8; 8];
+                        let rem = it.remainder();
+                        last[..rem.len()].copy_from_slice(rem);
+                        h.add(u64::from_le_bytes(last) ^ (rem.len() as u64) << 59);
+                    }
+                    h.0
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mut k = KeyHasher(0xbe54_66cf_34e9_0c6c);
+    k.add(rows.len() as u64);
+    for v in parts {
+        k.add(v);
+    }
+    k.0
+}
+
+/// 画素のハッシュ `pixels` と設定からキーを作る
+pub fn prepare_key_with(w: usize, h: usize, s: &Settings, pixels: u64) -> u64 {
+    let mut k = KeyHasher(0x243f_6a88_85a3_08d3);
+    k.add(w as u64);
+    k.add(h as u64);
+    k.add(s.colors.len() as u64);
+    for c in &s.colors {
+        for v in c.rgb {
+            k.add_f32(v);
+        }
+        k.add_f32(c.tolerance);
+    }
+    k.add_f32(s.tolerance);
+    k.add_f32(s.alpha_threshold);
+    k.add_f32(reach(s));
+    k.add(s.max_neighbors.clamp(1, MAX_NEIGHBORS) as u64);
+    k.add(pixels);
     k.0
 }
 

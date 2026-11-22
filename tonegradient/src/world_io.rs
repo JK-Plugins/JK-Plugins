@@ -166,6 +166,17 @@ pub struct Source<'a> {
 /// `changed`（入力のピクセル番号の昇順）のピクセルだけ上書きする。
 /// (dx, dy) は出力の原点から見た入力の原点のずれ（出力の (x, y) が入力の (x+dx, y+dy)）。
 #[allow(clippy::too_many_arguments)]
+/// 入力から変わったピクセル
+#[derive(Clone, Copy)]
+pub enum Changes<'a> {
+    /// （入力の番号 y*w+x、色）を番号の昇順に
+    List(&'a [(u32, [f32; 4])]),
+    /// 入力と同じ大きさの全画素。w：0 = 変更なし、1 = 変更（アルファは入力のまま）、
+    /// 2 = 変更（アルファ 1）。GPU から読み戻したものをそのまま使う
+    Dense(&'a [[f32; 4]]),
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn compose(
     input: &Source,
     out_buf: &mut [u8],
@@ -174,7 +185,7 @@ pub fn compose(
     out_layout: Layout,
     dx: i32,
     dy: i32,
-    changed: &[(u32, [f32; 4])],
+    changes: Changes,
 ) {
     let (iw, ih) = (input.w, input.rows.h);
     let oh = out_rows.h;
@@ -217,14 +228,42 @@ pub fn compose(
                             encode(out_layout, p, &mut row[x * out_bpp..(x + 1) * out_bpp]);
                         }
                     }
-                    // この入力行で変わったピクセル（changed は番号の昇順）
-                    let lo = changed.partition_point(|c| (c.0 as usize) < sy * iw);
-                    let hi = changed.partition_point(|c| (c.0 as usize) < (sy + 1) * iw);
-                    for &(i, p) in &changed[lo..hi] {
-                        let x = (i as usize - sy * iw) as i64 - dx as i64;
-                        if x >= 0 && (x as usize) < ow {
-                            let x = x as usize;
-                            encode(out_layout, p, &mut row[x * out_bpp..(x + 1) * out_bpp]);
+                    match changes {
+                        Changes::List(changed) => {
+                            // この入力行で変わったピクセル（changed は番号の昇順）
+                            let lo = changed.partition_point(|c| (c.0 as usize) < sy * iw);
+                            let hi = changed.partition_point(|c| (c.0 as usize) < (sy + 1) * iw);
+                            for &(i, p) in &changed[lo..hi] {
+                                let x = (i as usize - sy * iw) as i64 - dx as i64;
+                                if x >= 0 && (x as usize) < ow {
+                                    let x = x as usize;
+                                    encode(out_layout, p, &mut row[x * out_bpp..(x + 1) * out_bpp]);
+                                }
+                            }
+                        }
+                        Changes::Dense(px) => {
+                            let line = &px[sy * iw..(sy + 1) * iw];
+                            for x in xa..xb {
+                                let sx = (x as i64 + dx as i64) as usize;
+                                let o = line[sx];
+                                if o[3] == 0.0 {
+                                    continue;
+                                }
+                                let alpha = if o[3] >= 1.5 {
+                                    1.0
+                                } else {
+                                    decode(
+                                        input.layout,
+                                        &input.buf
+                                            [in_start + sx * in_bpp..in_start + (sx + 1) * in_bpp],
+                                    )[3]
+                                };
+                                encode(
+                                    out_layout,
+                                    [o[0], o[1], o[2], alpha],
+                                    &mut row[x * out_bpp..(x + 1) * out_bpp],
+                                );
+                            }
                         }
                     }
                 }
@@ -346,7 +385,7 @@ mod tests {
                     Layout::Argb16,
                     dx,
                     dy,
-                    &changed,
+                    Changes::List(&changed),
                 );
                 let out = read_world(&out_buf, out_rows, ow, Layout::Argb16);
                 for y in 0..oh {
@@ -401,7 +440,7 @@ mod tests {
             Layout::ArgbF32,
             0,
             0,
-            &[],
+            Changes::List(&[]),
         );
         let out = read_world(&out_buf, out_rows, w, Layout::ArgbF32);
         for y in 0..h {
@@ -433,7 +472,82 @@ mod tests {
             h: 2,
         };
         let mut out = vec![7u8; 3 * 4 * 2];
-        compose(&input, &mut out, out_rows, 3, Layout::Argb8, 0, 0, &[]);
+        compose(
+            &input,
+            &mut out,
+            out_rows,
+            3,
+            Layout::Argb8,
+            0,
+            0,
+            Changes::List(&[]),
+        );
         assert!(out.iter().all(|&b| b == 0));
+    }
+
+    /// 全画素の形（Dense）でも、変わった画素の並び（List）と同じ出力になる
+    #[test]
+    fn compose_dense_matches_list() {
+        let (iw, ih) = (8, 5);
+        for layout in [
+            Layout::Argb8,
+            Layout::Argb16,
+            Layout::ArgbF32,
+            Layout::Bgra8,
+        ] {
+            for (dx, dy) in [(0, 0), (2, 1), (-3, -2)] {
+                let (in_buf, in_rows) = make_world(iw, ih, layout, false, pattern);
+                let input = Source {
+                    buf: &in_buf,
+                    rows: in_rows,
+                    w: iw,
+                    layout,
+                };
+                let src = read_world(&in_buf, in_rows, iw, layout);
+                let mut dense = vec![[0f32; 4]; iw * ih];
+                let mut list = Vec::new();
+                for (i, flag) in [(2 * iw + 3, 2.0f32), (4 * iw + 7, 1.0), (iw + 1, 1.0)] {
+                    let c = [0.25, 0.5, 0.75];
+                    dense[i] = [c[0], c[1], c[2], flag];
+                    let a = if flag >= 1.5 { 1.0 } else { src[i][3] };
+                    list.push((i as u32, [c[0], c[1], c[2], a]));
+                }
+                list.sort_by_key(|c| c.0);
+                let (ow, oh) = (7, 6);
+                let stride = ow * layout.bytes_per_pixel() + 4;
+                let rows = Rows {
+                    stride,
+                    flip: false,
+                    h: oh,
+                };
+                let mut a = vec![0x33u8; stride * oh];
+                let mut b = vec![0x77u8; stride * oh];
+                compose(
+                    &input,
+                    &mut a,
+                    rows,
+                    ow,
+                    layout,
+                    dx,
+                    dy,
+                    Changes::List(&list),
+                );
+                compose(
+                    &input,
+                    &mut b,
+                    rows,
+                    ow,
+                    layout,
+                    dx,
+                    dy,
+                    Changes::Dense(&dense),
+                );
+                assert_eq!(
+                    read_world(&a, rows, ow, layout),
+                    read_world(&b, rows, ow, layout),
+                    "{dx},{dy}"
+                );
+            }
+        }
     }
 }
