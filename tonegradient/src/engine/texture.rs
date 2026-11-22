@@ -44,8 +44,12 @@ pub struct LayerTexture<'a> {
     pub width: usize,
     pub height: usize,
     pub value: &'a [f32],
-    /// テクスチャワールドの原点（描画座標系でのオフセット）
+    /// テクスチャワールドの原点（今は使わない。位置は xform に含める）
     pub origin: (i32, i32),
+    /// 描画座標（画素の中心）→ テクスチャ画像の画素の座標（画素の中心が整数）の変換
+    /// `u = a·x + b·y + c`、`v = d·x + e·y + f` の `[a, b, c, d, e, f]`。
+    /// テクスチャのレイヤーの位置・スケール・回転を、エフェクトのレイヤーから見たもの
+    pub xform: [f32; 6],
 }
 
 #[derive(Clone, Copy)]
@@ -292,6 +296,24 @@ impl<'a> Texture<'a> {
         }
     }
 
+    /// Layer テクスチャの画素の座標（画素の中心が整数）。テクスチャのレイヤーの位置・スケール・回転に合わせる
+    #[inline]
+    fn layer_uv(&self, x: f32, y: f32) -> (f32, f32) {
+        let m = self.layer.unwrap().xform;
+        (m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5])
+    }
+
+    /// この位置にテクスチャがあるか。Layer は画像の範囲の中だけ（外側はテクスチャをかけない）
+    #[inline]
+    pub fn covers(&self, x: f32, y: f32) -> bool {
+        if self.p.kind != TextureKind::Layer {
+            return true;
+        }
+        let l = self.layer.unwrap();
+        let (u, v) = self.layer_uv(x, y);
+        u >= -0.5 && v >= -0.5 && u < l.width as f32 - 0.5 && v < l.height as f32 - 0.5
+    }
+
     /// 回転（ずらしを引いてから）。セル単位にはしない
     #[inline]
     fn rot(&self, x: f32, y: f32) -> (f32, f32) {
@@ -347,16 +369,15 @@ impl<'a> Texture<'a> {
             }
             TextureKind::Layer => {
                 let l = self.layer.unwrap();
-                let sc = self.p.layer_scale.max(0.01);
-                // バイリニア補間（タイル状に繰り返す）。拡大しても角ばらない
-                let u = (x - self.p.offset.0) / sc - 0.5 - l.origin.0 as f32;
-                let v = (y - self.p.offset.1) / sc - 0.5 - l.origin.1 as f32;
+                // バイリニア補間（端は端の値を伸ばす）。拡大しても角ばらない。
+                // 繰り返さずに1枚だけ置く（外側は covers が false）
+                let (u, v) = self.layer_uv(x, y);
                 let (u0, v0) = (u.floor(), v.floor());
                 let (fu, fv) = (u - u0, v - v0);
                 let (lw, lh) = (l.width as i32, l.height as i32);
                 let at = |xi: i32, yi: i32| -> f32 {
-                    let xi = xi.rem_euclid(lw) as usize;
-                    let yi = yi.rem_euclid(lh) as usize;
+                    let xi = xi.clamp(0, lw - 1) as usize;
+                    let yi = yi.clamp(0, lh - 1) as usize;
                     l.value[yi * l.width + xi]
                 };
                 let (xi, yi) = (u0 as i32, v0 as i32);
@@ -477,30 +498,54 @@ mod tests {
     }
 
     #[test]
-    fn layer_scale_and_levels() {
+    fn layer_xform_and_levels() {
         let data = [0.25f32, 0.75, 0.5, 1.0];
+        // 描画座標を半分にしてずらす = テクスチャを2倍にして (8, 18) に置いたもの
         let l = LayerTexture {
             width: 2,
             height: 2,
             value: &data,
             origin: (0, 0),
+            xform: [0.5, 0.0, -4.0 - 0.5, 0.0, 0.5, -9.0 - 0.5],
         };
         let p = TextureParams {
             kind: TextureKind::Layer,
-            layer_scale: 2.0,
             layer_black: 0.25,
             layer_white: 0.75,
             ..Default::default()
         };
         let t = Texture::new(p, Some(l));
-        // 2倍拡大なのでテクセルの中心は (1,1)=data[0]、(3,1)=data[1]、(1,3)=data[2]
-        assert!((t.threshold(1.0, 1.0) - 0.0).abs() < 1e-6);
-        assert!((t.threshold(3.0, 1.0) - 0.99999).abs() < 1e-4);
-        assert!((t.threshold(1.0, 3.0) - 0.5).abs() < 1e-6);
+        // 画像は x 8..12、y 18..22。テクセルの中心は (9,19)=data[0]、(11,19)=data[1]、(9,21)=data[2]
+        assert!((t.threshold(9.0, 19.0) - 0.0).abs() < 1e-6);
+        assert!((t.threshold(11.0, 19.0) - 0.99999).abs() < 1e-4);
+        assert!((t.threshold(9.0, 21.0) - 0.5).abs() < 1e-6);
         // 中心どうしの間はバイリニア補間（0.25 と 0.75 の中間 = 0.5 → レベル補正で 0.5）
-        assert!((t.threshold(2.0, 1.0) - 0.5).abs() < 1e-6);
-        // タイル状に繰り返す（幅2テクセル = 4px）
-        assert!((t.threshold(5.0, 1.0) - t.threshold(1.0, 1.0)).abs() < 1e-6);
+        assert!((t.threshold(10.0, 19.0) - 0.5).abs() < 1e-6);
+        // 繰り返さない：画像の中だけ covers、外は false
+        assert!(t.covers(8.5, 18.5) && t.covers(11.5, 21.5));
+        assert!(!t.covers(7.5, 19.0) && !t.covers(12.5, 19.0) && !t.covers(10.0, 22.5));
+        // 端の外側でも値は端のまま（繰り返しの反対側の値にならない）
+        assert!((t.threshold(8.2, 19.0) - t.threshold(9.0, 19.0)).abs() < 1e-6);
+        // 回転：90度回したレイヤー（u = y − 0.5、v = 1.5 − x）でも対応する画素を読む
+        let r = Texture::new(
+            p,
+            Some(LayerTexture {
+                xform: [0.0, 1.0, -0.5, -1.0, 0.0, 1.5],
+                ..l
+            }),
+        );
+        // (x, y) = (1.5, 0.5) → (u, v) = (0, 0) = data[0]、(1.5, 1.5) → (1, 0) = data[1]
+        assert!(
+            (r.threshold(1.5, 0.5) - 0.0).abs() < 1e-6,
+            "{}",
+            r.threshold(1.5, 0.5)
+        );
+        assert!((r.threshold(1.5, 1.5) - 0.99999).abs() < 1e-4);
+    }
+
+    #[test]
+    fn non_layer_covers_everywhere() {
+        assert!(Texture::new(TextureParams::default(), None).covers(-1e6, 1e6));
     }
 
     /// Bayer・Grain は Angle で回転しない（細かい粒を回すとモアレが出るため）

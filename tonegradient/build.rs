@@ -65,12 +65,15 @@ fn main() {
             Property::AE_Effect_Global_OutFlags(
                 OutFlags::DeepColorAware |
                 OutFlags::SendUpdateParamsUI |
+                // Texture が Layer のときはテクスチャのレイヤーを動かすと結果が変わる（QueryDynamicFlags で切り替える）
+                OutFlags::NonParamVary |
                 // カーブのグラフを描く
                 OutFlags::CustomUI
             ),
             Property::AE_Effect_Global_OutFlags_2(
                 OutFlags2::FloatColorAware |
                 OutFlags2::SupportsSmartRender |
+                OutFlags2::SupportsQueryDynamicFlags |
                 OutFlags2::SupportsThreadedRendering |
                 OutFlags2::SupportsGetFlattenedSequenceData
             ),

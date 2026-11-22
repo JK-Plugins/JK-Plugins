@@ -595,6 +595,18 @@ impl AdobePluginGlobal for Plugin {
             ae::Command::GlobalSetup => {
                 self.global_setup(&in_data)?;
             }
+            ae::Command::QueryDynamicFlags => {
+                // Texture が Layer のときだけ「パラメータが同じでも結果が変わる」ことにする。
+                // テクスチャのレイヤーの位置・スケール・回転はパラメータではないので、
+                // そうしないと AE は前の結果を使い回し、レイヤーを動かしても描き直さない
+                // （このときのパラメータの配列は正しくないので checkout で読む）
+                let layer = params
+                    .checkout(Params::TextureType)
+                    .ok()
+                    .and_then(|p| p.as_popup().ok().map(|p| p.value()))
+                    .map_or(true, |v| texture_kind(v) == TextureKind::Layer);
+                out_data.set_out_flag(ae::OutFlags::NonParamVary, layer);
+            }
             ae::Command::UpdateParamsUi => {
                 // 失敗しても描画には影響しないので、エラーは返さない
                 if let Err(e) = update_enabled_state(params) {
@@ -670,9 +682,10 @@ fn update_enabled_state(params: &ae::Parameters<Params>) -> Result<(), Error> {
             Params::Softness,
             tex_on && params.get(Params::TexMode)?.as_popup()?.value() == 1,
         ),
-        (Params::TexSize, tex_on),
+        // Layer はテクスチャのレイヤーの位置・スケール・回転に合わせるので、大きさ・位置は使わない
+        (Params::TexSize, tex_on && kind != K::Layer),
         (Params::Angle, is(&[K::Dot, K::Line, K::Noise])),
-        (Params::TexPosition, tex_on),
+        (Params::TexPosition, tex_on && kind != K::Layer),
         (Params::DotShapeType, is(&[K::Dot])),
         (Params::Aspect, is(&[K::Dot]) && shape == DotShape::Ellipse),
         (Params::Octaves, is(&[K::Noise])),
@@ -716,6 +729,81 @@ struct Read {
     layer_channel: i32,
     /// GPU で合成する
     use_gpu: bool,
+}
+
+/// AEGP（レイヤーの位置などを読む AE の機能）を使うための ID。GlobalSetup で一度だけ登録する
+static AEGP_ID: std::sync::OnceLock<Option<ae::aegp::PluginId>> = std::sync::OnceLock::new();
+
+/// テクスチャのレイヤーの位置・スケール・回転を、エフェクトのレイヤーから見た変換にする（フル解像度の座標）。
+/// エフェクトのレイヤーの座標 (x, y) → テクスチャのレイヤーの座標 `(a·x + b·y + c, d·x + e·y + f)` の
+/// `[a, b, c, d, e, f]`。親レイヤーの分も含む。2D のみ（Z は無視）。読めないときは None
+fn texture_layer_xform(in_data: &InData, tex_param_index: i32) -> Option<[f64; 6]> {
+    use ae::aegp::suites::{Layer, PFInterface, Stream};
+    let plugin_id = (*AEGP_ID.get()?)?;
+    let pfi = PFInterface::new().ok()?;
+    let layers = Layer::new().ok()?;
+    let streams = Stream::new().ok()?;
+    let effect_ref = in_data.effect_ref();
+    let comp_time = pfi
+        .convert_effect_to_comp_time(effect_ref, in_data.current_time(), in_data.time_scale())
+        .ok()?;
+    // パラメータで選んだレイヤーの ID
+    let effect = pfi.new_effect_for_effect(effect_ref, plugin_id).ok()?;
+    let stream = streams
+        .new_effect_stream_by_index(&effect, plugin_id, tex_param_index)
+        .ok()?;
+    let ae::aegp::StreamValue::LayerId(id) = streams
+        .new_stream_value(
+            &stream,
+            plugin_id,
+            ae::aegp::TimeMode::CompTime,
+            comp_time,
+            false,
+        )
+        .ok()?
+    else {
+        return None;
+    };
+    if id == 0 {
+        return None;
+    }
+    let eff_layer = pfi.effect_layer(effect_ref).ok()?;
+    let comp = layers.layer_parent_comp(&eff_layer).ok()?;
+    let tex_layer = layers.layer_from_layer_id(&comp, id as u32).ok()?;
+    let e = layers.layer_to_world_xform(&eff_layer, comp_time).ok()?;
+    let t = layers.layer_to_world_xform(&tex_layer, comp_time).ok()?;
+    compose_xform(&<[f64; 16]>::from(e), &<[f64; 16]>::from(t))
+}
+
+/// AE の 4×4 行列（行ベクトル：world = [x y z 1]·M、平行移動は4行目）2つから、
+/// 「エフェクトのレイヤー → ワールド → テクスチャのレイヤー」の 2D アフィン変換を作る
+fn compose_xform(e: &[f64; 16], t: &[f64; 16]) -> Option<[f64; 6]> {
+    // world = A·p + T（列ベクトルの形に直す）
+    let lin = |m: &[f64; 16]| ([m[0], m[4], m[1], m[5]], [m[12], m[13]]);
+    let (ae_, te) = lin(e);
+    let (at, tt) = lin(t);
+    let det = at[0] * at[3] - at[1] * at[2];
+    if !det.is_finite() || det.abs() < 1e-12 {
+        return None;
+    }
+    let inv = [at[3] / det, -at[1] / det, -at[2] / det, at[0] / det];
+    // tex = inv·(Ae·p + Te − Tt)
+    let l = [
+        inv[0] * ae_[0] + inv[1] * ae_[2],
+        inv[0] * ae_[1] + inv[1] * ae_[3],
+        inv[2] * ae_[0] + inv[3] * ae_[2],
+        inv[2] * ae_[1] + inv[3] * ae_[3],
+    ];
+    let d = [te[0] - tt[0], te[1] - tt[1]];
+    let r = [
+        l[0],
+        l[1],
+        inv[0] * d[0] + inv[1] * d[1],
+        l[2],
+        l[3],
+        inv[2] * d[0] + inv[3] * d[1],
+    ];
+    r.iter().all(|v| v.is_finite()).then_some(r)
 }
 
 fn downsample(in_data: &InData) -> f32 {
@@ -921,6 +1009,13 @@ impl Plugin {
     fn global_setup(&mut self, in_data: &InData) -> Result<(), ae::Error> {
         win_dbg_logger::DEBUGGER_LOGGER.set_force_log_without_debugger(true);
         log::info!("GlobalSetup");
+        // テクスチャのレイヤーの位置を読むために AEGP に登録する（Premiere などで使えなければ None）
+        AEGP_ID.get_or_init(|| {
+            ae::aegp::suites::Utility::new()
+                .ok()?
+                .register_with_aegp(None, "JK Tone Gradient")
+                .ok()
+        });
         if in_data.is_premiere() {
             let suite = ae::pf::suites::PixelFormat::new()?;
             suite.clear_supported_pixel_formats(in_data.effect_ref())?;
@@ -981,6 +1076,11 @@ impl Plugin {
 
         if r.tex.kind == TextureKind::Layer {
             if let Some(index) = params.index(Params::TexLayer) {
+                // テクスチャのレイヤーを動かしたら描き直すよう、位置・スケール・回転をキャッシュのキーに混ぜる
+                // （レイヤーパラメータの画素は変わらないので、AE はそれだけでは描き直さない）
+                if let Some(m) = texture_layer_xform(in_data, index as i32) {
+                    let _ = extra.callbacks().guid_mix_in_ptr(&m);
+                }
                 // テクスチャはレイヤー全体を1枚としてタイル状に並べる
                 checkout_whole_layer(
                     in_data,
@@ -1085,11 +1185,29 @@ impl Plugin {
                     })
                     .collect::<Vec<f32>>();
                 let o = t.origin();
+                // テクスチャのレイヤーの位置・スケール・回転（読めなければエフェクトのレイヤーと同じ位置）
+                let m = params
+                    .index(Params::TexLayer)
+                    .and_then(|i| texture_layer_xform(in_data, i as i32))
+                    .unwrap_or([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+                // 描画もテクスチャも同じ縮小率の座標：tex = S·A·(S⁻¹·p)（S = 縮小率）。
+                // テクスチャの画素の座標は「ワールドの原点を引き、画素の中心を整数にする」
+                let (sx, sy): (f32, f32) =
+                    (in_data.downsample_x().into(), in_data.downsample_y().into());
+                let xform = [
+                    m[0] as f32,
+                    (m[1] * sx as f64 / sy as f64) as f32,
+                    (m[2] * sx as f64) as f32 - o.h as f32 - 0.5,
+                    (m[3] * sy as f64 / sx as f64) as f32,
+                    m[4] as f32,
+                    (m[5] * sy as f64) as f32 - o.v as f32 - 0.5,
+                ];
                 Some(LayerTexture {
                     width: t.width(),
                     height: t.height(),
                     value: &tex_value,
                     origin: (o.h, o.v),
+                    xform,
                 })
             }
             _ => None,
@@ -1124,5 +1242,59 @@ impl Plugin {
             compose(&source, out_buf, out_rows, ow, out_layout, dx, dy, changes)
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_xform;
+
+    /// AE の行列（行ベクトル、平行移動は4行目）
+    fn m(a: f64, b: f64, c: f64, d: f64, tx: f64, ty: f64) -> [f64; 16] {
+        // world.x = a·x + c·y + tx、world.y = b·x + d·y + ty
+        [
+            a, b, 0.0, 0.0, c, d, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, tx, ty, 0.0, 1.0,
+        ]
+    }
+
+    fn apply(x: &[f64; 6], p: (f64, f64)) -> (f64, f64) {
+        (
+            x[0] * p.0 + x[1] * p.1 + x[2],
+            x[3] * p.0 + x[4] * p.1 + x[5],
+        )
+    }
+
+    #[test]
+    fn same_place_is_identity() {
+        let x = compose_xform(
+            &m(1.0, 0.0, 0.0, 1.0, 50.0, 20.0),
+            &m(1.0, 0.0, 0.0, 1.0, 50.0, 20.0),
+        )
+        .unwrap();
+        let p = apply(&x, (12.0, 34.0));
+        assert!((p.0 - 12.0).abs() < 1e-9 && (p.1 - 34.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn moved_scaled_rotated_texture_layer() {
+        // エフェクトのレイヤーは (100, 0) に置かれている。テクスチャのレイヤーは2倍・90度回転して (10, 10) に
+        let e = m(1.0, 0.0, 0.0, 1.0, 100.0, 0.0);
+        let t = m(0.0, 2.0, -2.0, 0.0, 10.0, 10.0);
+        let x = compose_xform(&e, &t).unwrap();
+        // テクスチャのレイヤーの (3, 4) はワールドの (10 − 8, 10 + 6) = (2, 16) = エフェクトのレイヤーの (−98, 16)
+        let p = apply(&x, (-98.0, 16.0));
+        assert!(
+            (p.0 - 3.0).abs() < 1e-9 && (p.1 - 4.0).abs() < 1e-9,
+            "{p:?}"
+        );
+    }
+
+    #[test]
+    fn degenerate_scale_is_none() {
+        assert!(compose_xform(
+            &m(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            &m(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        )
+        .is_none());
     }
 }
