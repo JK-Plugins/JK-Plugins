@@ -5,7 +5,7 @@
       リリースの計画を作る：まとめリリースのタグ、プラグインの一覧とバージョン、
       個別アーカイブを作るプラグイン、リリースノート。バージョンの上げ忘れがあれば失敗する。
   package-windows --plan DIR/plan.json --out DIR
-      各プラグインをビルドして .aex と、まとめの zip を作る。
+      各プラグインをビルドして .aex と、まとめの zip・インストーラー（Inno Setup）を作る。
   package-macos --plan DIR/plan.json --out DIR
       各プラグインを Intel + Apple Silicon でビルドして .plugin を組み立て、
       ad-hoc 署名し、個別の .plugin.zip と、まとめの .pkg を作る。
@@ -32,10 +32,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_TAG = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:\.(\d+))?$")
 MEDIACORE_MAC = "/Library/Application Support/Adobe/Common/Plug-ins/7.0/MediaCore"
+# Windows インストーラーの AppId（アップデート・アンインストールで同じアプリとして扱う。変えないこと）
+INSTALLER_APP_ID = "ac1cc6ae-3bbb-468f-a850-bb6338f627a0"
 
 
 def run(*args, cwd=ROOT, check=True, capture=True):
-    r = subprocess.run(args, cwd=cwd, check=False, text=True, capture_output=capture)
+    r = subprocess.run(args, cwd=cwd, check=False, text=True, encoding="utf-8", errors="replace", capture_output=capture)
     if check and r.returncode != 0:
         raise SystemExit(f"command failed ({r.returncode}): {' '.join(map(str, args))}\n{r.stdout}\n{r.stderr}")
     return r.stdout if capture else ""
@@ -119,7 +121,7 @@ def bundle_tags():
 def version_at(ref, plugin):
     """ref の時点の Cargo.toml の version（無ければ None）"""
     r = subprocess.run(
-        ["git", "show", f"{ref}:{plugin['dir']}/Cargo.toml"], cwd=ROOT, text=True, capture_output=True
+        ["git", "show", f"{ref}:{plugin['dir']}/Cargo.toml"], cwd=ROOT, text=True, encoding="utf-8", errors="replace", capture_output=True
     )
     if r.returncode != 0:
         return None
@@ -191,7 +193,10 @@ def cmd_plan(args):
     lines += [
         "## インストール",
         "",
-        f"- **Windows**: `JK-Plugins-{bundle_version}-windows.zip` を解凍し、中の `.aex` を "
+        f"- **Windows**: `JK-Plugins-{bundle_version}-windows-setup.exe` を実行する（After Effects は終了しておく）。"
+        "署名していないので「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」を押す。"
+        "アンインストールは 設定 → アプリ → インストールされているアプリ の JK-Plugins から。"
+        f"インストーラーを使わないときは `JK-Plugins-{bundle_version}-windows.zip` を解凍し、中の `.aex` を "
         "`C:\\Program Files\\Adobe\\Common\\Plug-ins\\7.0\\MediaCore\\` にコピーする",
         f"- **macOS**: `JK-Plugins-{bundle_version}-macos.pkg` を開く。署名していないので最初は開けないため、"
         "システム設定 → プライバシーとセキュリティ の「このまま開く」を押してからもう一度開く",
@@ -230,16 +235,102 @@ def cmd_package_windows(args):
     out.mkdir(parents=True, exist_ok=True)
     target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
     bundle = out / f"JK-Plugins-{plan['bundle_version']}-windows.zip"
+    staged = out / "installer-files"
+    if staged.exists():
+        shutil.rmtree(staged)
+    staged.mkdir()
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
         for p in plan["plugins"]:
             run("cargo", "build", "--release", "-p", p["crate"], capture=False)
             dll = target / "release" / f"{p['lib']}.dll"
-            # まとめの zip の中は AE に入れるときの名前（cargo jk と同じ）
+            # まとめの zip とインストーラーの中は AE に入れるときの名前（cargo jk と同じ）
             z.write(dll, f"{p['plugin_name']}.aex")
+            shutil.copy2(dll, staged / f"{p['plugin_name']}.aex")
             # 個別のファイル（GitHub は空白を . に変えるのでハイフンの名前）
             shutil.copy2(dll, out / f"{p['asset_stem']}.aex")
             print(f"built {p['plugin_name']}.aex")
     print(bundle)
+    print(build_installer(plan, staged, out))
+
+
+# Windows のインストール先（Inno Setup の定数で書く）
+MEDIACORE_WIN = r"{commonpf64}\Adobe\Common\Plug-ins\7.0\MediaCore"
+MEDIACORE_WIN_TEXT = r"C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore"
+
+
+def find_iscc():
+    """Inno Setup のコンパイラ（ISCC.exe）。環境変数 ISCC か、よくある場所から探す"""
+    candidates = [os.environ.get("ISCC"), shutil.which("iscc")]
+    for env in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"]:
+        base = os.environ.get(env)
+        if base:
+            candidates.append(str(Path(base) / "Inno Setup 6" / "ISCC.exe"))
+            candidates.append(str(Path(base) / "Programs" / "Inno Setup 6" / "ISCC.exe"))
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
+    raise SystemExit("ISCC.exe (Inno Setup 6) not found. Install Inno Setup or set ISCC.")
+
+
+def build_installer(plan, staged, out):
+    """全プラグインを MediaCore に入れるインストーラー（Inno Setup）。署名はしない。
+    アンインストーラーは Program Files の JK-Plugins に置く（MediaCore に余計な exe を置かない）"""
+    version = plan["bundle_version"]
+    names = ", ".join(f"{p['plugin_name']} {p['version']}" for p in plan["plugins"])
+    # Windows のファイルバージョンは数字4つまで（2026.11.22 → 2026.11.22.0）
+    file_version = ".".join((version.split(".") + ["0"])[:4])
+    lines = [
+        "; release.py が作る。手で編集しない",
+        "[Setup]",
+        # AppId は { を2つ重ねて書く（Inno Setup の決まり）
+        "AppId={{" + INSTALLER_APP_ID + "}",
+        "AppName=JK-Plugins",
+        f"AppVersion={version}",
+        f"AppVerName=JK-Plugins {version}",
+        "AppPublisher=JK-Plugins",
+        "AppPublisherURL=https://github.com/JK-Plugins/JK-Plugins",
+        "AppSupportURL=https://github.com/JK-Plugins/JK-Plugins/releases",
+        f"VersionInfoVersion={file_version}",
+        f"VersionInfoDescription=JK-Plugins for After Effects ({names})",
+        r"DefaultDirName={commonpf64}\JK-Plugins",
+        "DisableDirPage=yes",
+        "DisableProgramGroupPage=yes",
+        "PrivilegesRequired=admin",
+        "ArchitecturesAllowed=x64compatible",
+        "ArchitecturesInstallIn64BitMode=x64compatible",
+        # After Effects が .aex を使っていたら知らせる
+        "CloseApplications=yes",
+        "RestartApplications=no",
+        f"OutputDir={out.resolve()}",
+        f"OutputBaseFilename=JK-Plugins-{version}-windows-setup",
+        "Compression=lzma2",
+        "SolidCompression=yes",
+        "WizardStyle=modern",
+        "UninstallDisplayName=JK-Plugins (After Effects)",
+        "",
+        "[Languages]",
+        r'Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"',
+        r'Name: "en"; MessagesFile: "compiler:Default.isl"',
+        "",
+        "[Messages]",
+        f"ja.WelcomeLabel2=After Effects 用のプラグイン（{names}）を%n{MEDIACORE_WIN_TEXT} にインストールします。"
+        "%n%n続ける前に After Effects を終了してください。",
+        f"en.WelcomeLabel2=This installs After Effects plug-ins ({names}) into%n{MEDIACORE_WIN_TEXT}."
+        "%n%nPlease quit After Effects before continuing.",
+        "",
+        "[Files]",
+    ]
+    for p in plan["plugins"]:
+        src = (staged / f"{p['plugin_name']}.aex").resolve()
+        lines.append(f'Source: "{src}"; DestDir: "{MEDIACORE_WIN}"; Flags: ignoreversion')
+    script = out / "installer.iss"
+    # ISCC は BOM 付き UTF-8 を Unicode として読む
+    script.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8-sig")
+    run(find_iscc(), "/Q", str(script), capture=False)
+    exe = out / f"JK-Plugins-{version}-windows-setup.exe"
+    if not exe.exists():
+        raise SystemExit(f"installer not produced: {exe}")
+    return exe
 
 
 # ---------------------------------------------------------------- macOS
