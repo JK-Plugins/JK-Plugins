@@ -145,6 +145,21 @@ def changed_since(ref, paths):
     return r.returncode != 0
 
 
+def readme_version_errors(plist):
+    """README のプラグイン一覧の行（| [名前](dir/README.md) | [版](…/tag/<crate>-v<版>) | 説明 |）が
+    Cargo.toml の version と合っているか"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    errors = []
+    for p in plist:
+        row = next((l for l in text.splitlines() if f"]({p['dir']}/README.md)" in l and l.startswith("|")), None)
+        expected = f"[{p['version']}](https://github.com/JK-Plugins/JK-Plugins/releases/tag/{p['archive_tag']})"
+        if row is None:
+            errors.append(f"{p['crate']}: README.md のプラグイン一覧に行がない（{expected} を書く）")
+        elif expected not in row:
+            errors.append(f"{p['crate']}: README.md のプラグイン一覧のバージョンを {expected} にする")
+    return errors
+
+
 def cmd_plan(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -173,6 +188,7 @@ def cmd_plan(args):
         else:
             p["new_version"] = True
         p["previous_version"] = version_at(prev_tag, p) if prev_tag else None
+    errors += readme_version_errors(plist)
     if errors:
         raise SystemExit("version check failed:\n  " + "\n  ".join(errors))
 
