@@ -195,7 +195,7 @@ def files_html(p, released):
 
 
 def collection_head(c):
-    rel, n = c["release"], len(c["plugins"])
+    rel = c["release"]
     if rel is None:
         get = '<span class="soon">準備中</span>'
     else:
@@ -203,11 +203,11 @@ def collection_head(c):
             if asset is None:
                 return f'<a class="big" href="{e(rel["url"])}" data-cur="Release">{icon}<span>{os_name}</span><small></small></a>'
             url, size = asset
-            return (f'<a class="big" href="{e(url)}" title="{n} 本すべてのインストーラー {ext}">'
-                    f'{icon}<span>{os_name}<em>{n} 本</em></span><small>{ext} · {fmt_size(size)}</small>{ICON_DL}</a>')
+            return (f'<a class="big" href="{e(url)}" title="すべてのプラグインのインストーラー {ext}">'
+                    f'{icon}<span>{os_name}</span><small>{ext} · {fmt_size(size)}</small>{ICON_DL}</a>')
 
-        # まとめて入れるボタンだと分かるように、上に小さく「まとめてインストール (本数)」
-        get = (f'<div class="get-label">まとめてインストール<span class="p">({n})</span></div>'
+        # まとめて入れるボタンだと分かるように、上に小さく「まとめてインストール」
+        get = ('<div class="get-label">まとめてインストール</div>'
                '<div class="installers">' + big(rel["win_setup"], ICON_WIN, "Windows", ".exe")
                + big(rel["mac_pkg"], ICON_MAC, "macOS", ".pkg") + '</div>'
                + f'<a class="more" href="{e(rel["url"])}">v{e(rel["version"])} ・ zip・過去の版 →</a>')

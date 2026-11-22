@@ -90,8 +90,6 @@ nav.top a.gh:hover { color: var(--ink); }
 .get { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .installers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .get-label { display: flex; align-items: flex-start; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
-.get-label .p { font: italic 400 15px/1 var(--serif); }
-.big em { font-style: normal; font-weight: 400; font-size: 12px; opacity: .6; margin-left: 8px; }
 .big { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 14px; align-items: center; gap: 10px; min-width: 230px; padding: 14px 20px;
   border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 600; font-size: 15px; transition: transform .2s, opacity .2s; }
 .big:hover { transform: translateY(-1px); opacity: .88; }
