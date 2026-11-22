@@ -106,6 +106,14 @@
         <div class="row"><span class="name">Mid Width</span><input type="range" data-p="mid_width" min="0" max="100" step="1" value="50"><output></output></div>
       </div>
 
+      <div class="group ae">
+        <h2>After Effects へ</h2>
+        <p class="note2">いまの値をコピーして、Ae でこのエフェクトを入れたレイヤーを選び、貼り付け（Ctrl+V / ⌘V）。今の時間にキーフレームとして入ります。</p>
+        <label class="row"><span class="name">色もコピー</span><label class="sw"><input type="checkbox" id="aecolors"><span></span></label></label>
+        <button class="copy" id="aecopy">Ae 用にコピー</button>
+        <textarea id="aetext" readonly hidden aria-label="Ae に貼り付けるテキスト"></textarea>
+      </div>
+
       <button class="ghost reset" id="reset">初期値に戻す</button>
     </section>
   </main>
