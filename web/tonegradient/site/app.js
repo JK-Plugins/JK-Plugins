@@ -24,9 +24,11 @@
   var W = 0, H = 0, src = null, colors = [], usingImage = false;
   var bufs = null;
 
-  // ---- サンプル画像（プラグインの説明の画像と同じ球の塗り分け） ----
-  var HI = [1.0, 0.95, 0.88], BASE = [0.96, 0.80, 0.70], SHADOW = [0.80, 0.58, 0.55], SHADOW2 = [0.62, 0.42, 0.48];
-  var BG = [0.55, 0.70, 0.85], LINE = [0.1, 0.08, 0.1];
+  // ---- サンプル画像（球の塗り分け。プラグインの説明の画像と同じ形） ----
+  // 色は配布サイトに合わせる：紙の白の背景・黒い線、球はビデオテープの帯の色（黄→橙→赤→マゼンタ）
+  function unit(h) { return [1, 3, 5].map(function (i) { return parseInt(h.substr(i, 2), 16) / 255; }); }
+  var HI = unit("#f6b51d"), BASE = unit("#ef4b24"), SHADOW = unit("#e3204a"), SHADOW2 = unit("#b51c7d");
+  var BG = unit("#f9f7f2"), LINE = unit("#151515");
   function u8(c) { return c.map(function (v) { return Math.round(v * 255); }); }
 
   function sampleScene(w, h) {
