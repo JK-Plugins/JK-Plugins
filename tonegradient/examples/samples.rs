@@ -23,12 +23,14 @@ fn save(path: &std::path::Path, w: usize, h: usize, px: &[[f32; 4]]) {
     f.write_all(&buf).unwrap();
 }
 
-pub const HI: [f32; 3] = [1.0, 0.95, 0.88];
-pub const BASE: [f32; 3] = [0.96, 0.80, 0.70];
-pub const SHADOW: [f32; 3] = [0.80, 0.58, 0.55];
-pub const SHADOW2: [f32; 3] = [0.62, 0.42, 0.48];
-const BG: [f32; 3] = [0.55, 0.70, 0.85];
-const LINE: [f32; 3] = [0.1, 0.08, 0.1];
+// 色は配布サイトに合わせる：球はビデオテープの帯の色（黄→橙→赤→マゼンタ）、背景は紙の白、線は黒
+// （web/tonegradient/site/app.js のサンプルと同じ）
+pub const HI: [f32; 3] = [0.965, 0.710, 0.114];
+pub const BASE: [f32; 3] = [0.937, 0.294, 0.141];
+pub const SHADOW: [f32; 3] = [0.890, 0.125, 0.290];
+pub const SHADOW2: [f32; 3] = [0.710, 0.110, 0.490];
+const BG: [f32; 3] = [0.976, 0.969, 0.949];
+const LINE: [f32; 3] = [0.082, 0.082, 0.082];
 
 /// 球っぽい塗り分け：ハイライト・ベース・影・2影＋線と背景。`aa` で塗りの境界にアンチエイリアス
 pub fn scene(aa: bool) -> Vec<[f32; 4]> {
@@ -285,7 +287,8 @@ fn cases() -> Vec<Case> {
 
     // Mid Color（3つ目の色としてグラデーションに入る。テクスチャも同じようにかかる）
     let mid = |amount: f32, width: f32, pos: MidPosition| Settings {
-        mid_color: [1.0, 0.55, 0.45],
+        // 帯の色の上でも見分けやすい白（プラグインの初期値と同じ）
+        mid_color: [1.0, 1.0, 1.0],
         mid_amount: amount,
         mid_width: width,
         mid_position: pos,
