@@ -132,7 +132,7 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
 - プラグインのバージョンは各 `Cargo.toml` の `version` だけで管理します（build.rs が読んで AE のバージョンにします。
   AE の制限で minor と patch は 0〜15）
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
-  上げ忘れとしてリリースが止まります
+  上げ忘れとしてリリースが止まります（プラグインの中のファイルに入らない `docs/`・`examples/`・`tools/`・README だけの変更は数えません）
 - リリースのあと、配布サイト（GitHub Pages）も自動で作り直します（`.github/workflows/pages.yml`。
   中身は JK-Plugins と [fs-rs](https://github.com/JK-Plugins/fs-rs) の README のプラグイン一覧と最新のリリースから
   `.github/scripts/site.py` が作る。fs-rs のリリースは6時間ごとの作り直しで反映される）
