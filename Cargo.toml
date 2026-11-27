@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "tonegradient",
+    "fillerase",
     "libs",
 ]
 # ブラウザのデモ（WebAssembly）は別にビルドする

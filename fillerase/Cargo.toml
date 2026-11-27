@@ -1,0 +1,23 @@
+[package]
+name = "fillerase"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.jk_plugin]
+plugin_name = "JK Fill Erase"
+identifier = "com.adobe.AfterEffects.fillerase"
+
+[profile.release]
+debug = true
+
+[lib]
+# rlib はテスト用
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(any(windows, target_os="macos"))'.dependencies]
+after-effects = {git = "https://github.com/virtualritz/after-effects", rev = "c70729a", features = ["catch-panics"]}
+log = "0.4.26"
+win_dbg_logger = "0.1.0"
+
+[target.'cfg(any(windows, target_os="macos"))'.build-dependencies]
+pipl = {git = "https://github.com/virtualritz/after-effects", rev = "83dcc93"} # Windows の PiPL がコードページで壊れる不具合の修正（#124）を含む

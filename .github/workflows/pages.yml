@@ -21,6 +21,8 @@ on:
       # ブラウザで試すページ（エンジンを WebAssembly にしたもの）
       - "web/**"
       - "*/src/engine/**"
+      - fillerase/src/engine.rs
+      - fillerase/src/par.rs
 
 permissions:
   contents: read
@@ -40,7 +42,9 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: web/tonegradient
+          workspaces: |
+            web/tonegradient
+            web/fillerase
       - name: Build
         env:
           GH_TOKEN: ${{ github.token }}
