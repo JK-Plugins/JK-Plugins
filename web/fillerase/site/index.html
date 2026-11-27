@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JK Fill Erase を試す</title>
+<meta name="description" content="JK Fill Erase（After Effects プラグイン）をブラウザで試す">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Instrument+Serif:ital@0;1&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="back" href="../../">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>JK-Plugins
+    </a>
+    <a class="doc" href="{{README}}">説明・パラメータ</a>
+  </nav>
+
+  <header class="head">
+    <div>
+      <h1>JK Fill Erase</h1>
+      <div class="vline"><span class="ver">v{{VERSION}}</span><span class="tag">ブラウザで試す</span></div>
+    </div>
+    <div class="dl">
+      <a class="btn" href="{{AEX}}" title="Windows .aex">{{ICON_WIN}}<span>Windows</span>{{AEX_SIZE}}{{ICON_DL}}</a>
+      <a class="btn" href="{{PLUGIN}}" title="macOS .plugin">{{ICON_MAC}}<span>macOS</span>{{PLUGIN_SIZE}}{{ICON_DL}}</a>
+    </div>
+  </header>
+
+  <main class="app">
+    <section class="stage">
+      <div class="viewer" id="viewer">
+        <div class="pic" id="pic"><canvas id="canvas" width="480" height="360"></canvas></div>
+        <div class="loading" id="loading">読み込み中…</div>
+      </div>
+      <div class="toolbar">
+        <div class="seg" id="zoom" role="group" aria-label="拡大">
+          <button data-v="1" class="on">1×</button><button data-v="2">2×</button><button data-v="4">4×</button>
+        </div>
+        <button class="hold" id="before" title="押している間、元の画像を表示">元の画像</button>
+        <label class="file">画像を読み込む<input type="file" id="file" accept="image/*"></label>
+        <button class="ghost" id="sample">サンプル</button>
+        <span class="ms" id="ms"></span>
+      </div>
+      <div class="points">
+        <span class="label">Point Count <span class="count" id="count">1</span> / 99
+          <span class="hint">画像をクリックで足す・ドラッグで動かす・ダブルクリックで外す</span></span>
+        <button class="ghost" id="hidepts">点を隠す</button>
+        <button class="ghost" id="onept">1つに戻す</button>
+      </div>
+    </section>
+
+    <section class="panel" id="panel">
+      <div class="group">
+        <div class="row"><span class="name">表示</span>
+          <div class="seg" data-p="view"><button data-v="0" class="on">結果</button><button data-v="1">消える範囲</button></div></div>
+      </div>
+      <div class="group">
+        <h2>Fill Erase</h2>
+        <div class="row"><span class="name">Tolerance</span><input type="range" data-p="tolerance" min="0" max="100" step="0.5" value="10"><output></output></div>
+        <div class="row"><span class="name">Softness</span><input type="range" data-p="softness" min="0" max="100" step="0.5" value="0"><output></output></div>
+        <div class="row"><span class="name">Choke</span><input type="range" data-p="choke" min="-20" max="20" step="0.5" value="0"><output></output></div>
+        <div class="row"><span class="name">Contiguous</span><label class="sw"><input type="checkbox" data-p="contiguous" checked><span></span></label></div>
+        <div class="row"><span class="name">Compare Alpha</span><label class="sw"><input type="checkbox" data-p="compare_alpha" checked><span></span></label></div>
+        <div class="row"><span class="name">Invert</span><label class="sw"><input type="checkbox" data-p="invert"><span></span></label></div>
+      </div>
+
+      <div class="group ae">
+        <h2>After Effects へ</h2>
+        <p class="note2">いまの点と値をコピーして、Ae でこのエフェクトを入れたレイヤーを選び、貼り付け（Ctrl+V / ⌘V）。今の時間にキーフレームとして入ります。点の位置は読み込んだ画像の元の大きさに合わせます。</p>
+        <button class="copy" id="aecopy">Ae 用にコピー</button>
+        <textarea id="aetext" readonly hidden aria-label="Ae に貼り付けるテキスト"></textarea>
+      </div>
+
+      <button class="ghost reset" id="reset">初期値に戻す</button>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

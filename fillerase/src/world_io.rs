@@ -250,7 +250,7 @@ pub fn read_world(buf: &[u8], rows: Rows, w: usize, layout: Layout) -> Vec<[f32;
     }
     let bpp = layout.bytes_per_pixel();
     let rows_per = thread_rows(h);
-    std::thread::scope(|sc| {
+    crate::par::scope(|sc| {
         for (ci, chunk) in v.chunks_mut(rows_per * w).enumerate() {
             sc.spawn(move || {
                 for (r, row) in chunk.chunks_mut(w).enumerate() {
@@ -314,7 +314,7 @@ pub fn compose(
     let xb = (iw as i64 - dx as i64).clamp(0, ow as i64) as usize;
     let stride = out_rows.stride;
     let rows_per = thread_rows(oh);
-    std::thread::scope(|sc| {
+    crate::par::scope(|sc| {
         for (ci, chunk) in out_buf.chunks_mut(stride * rows_per).enumerate() {
             sc.spawn(move || {
                 for (r, row) in chunk.chunks_mut(stride).enumerate() {

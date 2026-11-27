@@ -155,7 +155,7 @@ pub fn fill_mask<P: Pixels + ?Sized>(src: &P, w: usize, h: usize, s: &Settings) 
     if !s.contiguous {
         // 画像全体の似た色：ピクセルごとに独立なので、行で分けて並列に
         let rows = crate::world_io::thread_rows(h);
-        std::thread::scope(|sc| {
+        crate::par::scope(|sc| {
             for (ci, mc) in mask.chunks_mut(rows * w).enumerate() {
                 let seeds = &seeds;
                 sc.spawn(move || {
@@ -328,7 +328,7 @@ pub fn distance_to(w: usize, h: usize, is_source: impl Fn(usize) -> bool + Sync)
     // 縦：画像を縦長の帯に分け、帯ごとに上から・下から1行ずつ見て、同じ列の一番近い source までの
     // 距離の2乗を求める（帯の中は行優先に並べるので、メモリを順に読み書きする）
     let band_w = w.div_ceil(threads).max(1);
-    let bands: Vec<(usize, Vec<f32>)> = std::thread::scope(|sc| {
+    let bands: Vec<(usize, Vec<f32>)> = crate::par::scope(|sc| {
         let hs: Vec<_> = (0..w)
             .step_by(band_w)
             .map(|x0| {
@@ -371,7 +371,7 @@ pub fn distance_to(w: usize, h: usize, is_source: impl Fn(usize) -> bool + Sync)
     // 横：行ごとに min_x' (g + (x − x')²)
     let mut d = vec![0f32; w * h];
     let rows = h.div_ceil(threads).max(1);
-    std::thread::scope(|sc| {
+    crate::par::scope(|sc| {
         for (ri, chunk) in d.chunks_mut(rows * w).enumerate() {
             let bands = &bands;
             sc.spawn(move || {

@@ -32,7 +32,7 @@ fn hash_pixels(src: &Source) -> u64 {
     let (w, h) = (src.w, src.rows.h);
     let n = w * src.layout.bytes_per_pixel();
     let per = crate::world_io::thread_rows(h);
-    let parts: Vec<u64> = std::thread::scope(|sc| {
+    let parts: Vec<u64> = crate::par::scope(|sc| {
         let hs: Vec<_> = (0..h)
             .step_by(per.max(1))
             .map(|y0| {
