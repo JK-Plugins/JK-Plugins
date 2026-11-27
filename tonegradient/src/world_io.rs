@@ -176,6 +176,53 @@ pub enum Changes<'a> {
     Dense(&'a [[f32; 4]]),
 }
 
+/// GPU から読み戻した全画素（`Changes::Dense` の形）を、変わった画素の並び（`Changes::List` の形、
+/// アルファは入力から読んで確定させる）にする。キャッシュに小さく持つため。行ごとにスレッドで分ける
+pub fn dense_to_list(dense: &[[f32; 4]], input: &Source) -> Vec<(u32, [f32; 4])> {
+    let (w, h) = (input.w, input.rows.h);
+    if w == 0 || h == 0 || dense.len() < w * h {
+        return Vec::new();
+    }
+    let bpp = input.layout.bytes_per_pixel();
+    let rows_per = thread_rows(h);
+    let parts: Vec<Vec<(u32, [f32; 4])>> = std::thread::scope(|sc| {
+        let hs: Vec<_> = dense[..w * h]
+            .chunks(rows_per * w)
+            .enumerate()
+            .map(|(ci, chunk)| {
+                sc.spawn(move || {
+                    let mut out = Vec::new();
+                    for (r, line) in chunk.chunks(w).enumerate() {
+                        let y = ci * rows_per + r;
+                        let start = input.rows.start(y);
+                        for (x, o) in line.iter().enumerate() {
+                            if o[3] == 0.0 {
+                                continue;
+                            }
+                            let alpha = if o[3] >= 1.5 {
+                                1.0
+                            } else {
+                                decode(
+                                    input.layout,
+                                    &input.buf[start + x * bpp..start + (x + 1) * bpp],
+                                )[3]
+                            };
+                            out.push(((y * w + x) as u32, [o[0], o[1], o[2], alpha]));
+                        }
+                    }
+                    out
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mut v = Vec::with_capacity(parts.iter().map(|p| p.len()).sum());
+    for p in parts {
+        v.extend_from_slice(&p);
+    }
+    v
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn compose(
     input: &Source,
