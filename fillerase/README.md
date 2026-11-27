@@ -4,6 +4,8 @@
 「似た色でつながっている範囲」を求めて、その範囲を透明にする After Effects プラグインです。
 セル画の背景色だけ抜く・塗りの一部だけ消す、といった使い方を想定しています。
 
+![概要](docs/samples/00_overview.png)
+
 **ブラウザで試す：https://jk-plugins.github.io/JK-Plugins/try/fillerase/**
 
 ## 仕組み
@@ -44,4 +46,11 @@
 ```bash
 cd fillerase
 cargo jk install
+```
+
+上の作例の画像は次の2行で作り直せます（入力はブラウザのデモと同じ絵）。
+
+```bash
+cargo run --release -p fillerase --example samples samples_out
+python3 fillerase/tools/make_sheets.py samples_out fillerase/docs/samples
 ```
