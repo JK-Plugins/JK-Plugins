@@ -21,45 +21,32 @@
   var bufs = null;
 
   // ---- サンプル画像：VHS テープのラベルのようなグラフィック ----
-  // ピクセルごとに色を決める（アンチエイリアスなし。境界はくっきり）。
-  // クリーム色の地に、斜めの虹の帯・横じまの切れ目が入った太陽・左上の短い横じま・下の紺の帯と細い虹の線
+  // 色が抜けるか確かめやすいように、少ない色のベタ塗りだけ。ピクセルごとに色を決める（アンチエイリアスなし）。
+  // 図形どうしは隙間なく接する：クリーム色の地・斜めの虹の帯・色の段の太陽・下の紺の帯と虹の線
   function hexRgb(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
-  var CREAM = hexRgb("#f1e6cf"), INK = hexRgb("#151515"), NAVY = hexRgb("#1b1f4a");
+  var CREAM = hexRgb("#f1e6cf"), NAVY = hexRgb("#1b1f4a");
   var RAINBOW = ["#f6b51d", "#f07a1a", "#e3204a", "#b51c7d", "#5b2a86"].map(hexRgb);
 
   function sampleScene(w, h) {
     var px = new Uint8ClampedArray(w * h * 4);
     var k = h / 360;
-    // 斜めの帯：右上がりの線に垂直な座標 u で、帯の中の何本目かを決める
+    // 斜めの帯：右上がりの線に垂直な座標で、帯の中の何本目かを決める
     var nx = 0.42, ny = 1, nl = Math.hypot(nx, ny);
-    var u0 = 190 * k, bw = 15 * k;
-    // 太陽
+    var u0 = 190 * k, bw = 18 * k;
+    // 太陽（上から黄・橙・赤・マゼンタの段）
     var cx = w * 0.74, cy = h * 0.4, r = h * 0.24;
-    // 太陽の下半分の切れ目（t は太陽の上端 0〜下端 1、厚みは下ほど太く）
-    var gaps = [[0.56, 2], [0.66, 3], [0.75, 4], [0.83, 5], [0.9, 6], [0.96, 7]];
-    var barTop = Math.round(h * 0.84);
+    var barTop = Math.round(h * 0.82), lineH = Math.max(1, Math.round(6 * k));
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         var c = CREAM;
         var band = Math.floor(((x * nx + y * ny) / nl - u0) / bw);
         if (band >= 0 && band < RAINBOW.length) c = RAINBOW[band];
         var dx = x + 0.5 - cx, dy = y + 0.5 - cy;
-        if (dx * dx + dy * dy < r * r) {
-          var t = (dy + r) / (2 * r), cut = false;
-          for (var g = 0; g < gaps.length; g++) {
-            var gy = cy - r + gaps[g][0] * 2 * r;
-            if (y + 0.5 >= gy && y + 0.5 < gy + gaps[g][1] * k) cut = true;
-          }
-          if (!cut) c = RAINBOW[Math.min(3, Math.floor(t * 4))];
-        }
+        if (dx * dx + dy * dy < r * r) c = RAINBOW[Math.min(3, Math.floor((dy + r) / (2 * r) * 4))];
         if (y >= barTop) {
-          c = NAVY;
-          var line = Math.floor((y - barTop - Math.round(10 * k)) / Math.max(1, Math.round(4 * k)));
-          if (line >= 0 && line < RAINBOW.length) c = RAINBOW[line];
+          var line = Math.floor((y - barTop) / lineH);
+          c = line < RAINBOW.length ? RAINBOW[line] : NAVY;
         }
-        // 左上：短い横じま（下ほど短く、間に地の色のすき間）
-        var sy = Math.floor((y - 26 * k) / (9 * k)), sr = (y - 26 * k) - sy * 9 * k;
-        if (sy >= 0 && sy < 4 && sr < 6 * k && x >= 24 * k && x < (150 - sy * 26) * k) c = sy === 0 ? INK : RAINBOW[sy - 1];
         var i = (y * w + x) * 4;
         px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
       }
