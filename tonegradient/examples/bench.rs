@@ -1,7 +1,10 @@
 //! 処理時間の目安を測る（cargo run --release --example bench）
 use std::time::Instant;
 use tonegradient::engine::*;
-use tonegradient::world_io::{compose, encode, read_world, Changes, Layout, Rows, Source};
+use tonegradient::result_cache::ResultCache;
+use tonegradient::world_io::{
+    compose, dense_to_list, encode, read_world, Changes, Layout, Rows, Source,
+};
 
 fn main() {
     let width: f32 = std::env::args()
@@ -299,4 +302,158 @@ fn main() {
         "キーのハッシュ（8bpc のバイト列）  {:>6.1} ms",
         t.elapsed().as_secs_f64() * 1e3 / n as f64
     );
+
+    // 同じ絵が続くフレーム（2コマ・3コマ打ち）：プラグインの1フレームぶん（キー → 合成 → 出力）
+    // - 前：距離変換はキャッシュが効くが、毎回 float に変換して合成する
+    // - 今：合成の結果のキャッシュが効けば、覚えておいた並びを書き込むだけ
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3 / n as f64;
+    let rkey = |s: &Settings, tp: &TextureParams| {
+        let pk = prepare_key_with(w, h, s, hash_rows(&lines));
+        (pk, shade_key(pk, s, tp, 0))
+    };
+    for (name, s, tp) in [
+        (
+            "dot",
+            base(),
+            TextureParams {
+                kind: TextureKind::Dot,
+                ..Default::default()
+            },
+        ),
+        (
+            "dot aa4",
+            Settings {
+                aa_samples: 4,
+                ..base()
+            },
+            TextureParams {
+                kind: TextureKind::Dot,
+                ..Default::default()
+            },
+        ),
+        (
+            "noise aa4",
+            Settings {
+                aa_samples: 4,
+                ..base()
+            },
+            TextureParams {
+                kind: TextureKind::Noise,
+                cell: 3.0,
+                octaves: 4,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let tex = Texture::new(tp, None);
+        let (pk, _) = rkey(&s, &tp);
+        let _ = gpu::render(w, h, &src, pk, &s, &tex);
+        // 前（CPU）
+        let t = Instant::now();
+        for _ in 0..n {
+            let _ = rkey(&s, &tp);
+            let f = read_world(&in_buf, rows, w, layout);
+            let o = shade(&p, &f, &s, &tex);
+            compose(
+                &input,
+                &mut out,
+                rows,
+                w,
+                layout,
+                0,
+                0,
+                Changes::List(&o.changed),
+            );
+        }
+        let before_cpu = ms(t);
+        // 前（GPU）
+        let t = Instant::now();
+        for _ in 0..n {
+            let (pk, _) = rkey(&s, &tp);
+            let _ = gpu::render_with(
+                w,
+                h,
+                || read_world(&in_buf, rows, w, layout),
+                pk,
+                &s,
+                &tex,
+                |px| {
+                    let c = px.map_or(Changes::List(&[]), Changes::Dense);
+                    compose(&input, &mut out, rows, w, layout, 0, 0, c)
+                },
+            );
+        }
+        let before_gpu = ms(t);
+        // 今：1回目（GPU、全画素を並びにしてキャッシュに入れる分が増える）
+        let cache = ResultCache::new(8, 512 << 20);
+        let t = Instant::now();
+        for i in 0..n {
+            let (pk, rk) = rkey(&s, &tp);
+            let (list, _) = gpu::render_with(
+                w,
+                h,
+                || read_world(&in_buf, rows, w, layout),
+                pk,
+                &s,
+                &tex,
+                |px| {
+                    let c = px.map_or(Changes::List(&[]), Changes::Dense);
+                    compose(&input, &mut out, rows, w, layout, 0, 0, c);
+                    px.map_or_else(Vec::new, |px| dense_to_list(px, &input))
+                },
+            )
+            .unwrap();
+            cache.put(rk ^ i as u64, std::sync::Arc::new(list));
+        }
+        let miss_gpu = ms(t);
+        // 今：2回目以降（同じ絵）
+        let (_, rk) = rkey(&s, &tp);
+        let o = shade(&p, &src, &s, &tex);
+        cache.put(rk, std::sync::Arc::new(o.changed));
+        let t = Instant::now();
+        for _ in 0..n {
+            let (_, rk) = rkey(&s, &tp);
+            let hit = cache.get(rk).unwrap();
+            compose(&input, &mut out, rows, w, layout, 0, 0, Changes::List(&hit));
+        }
+        let hit = ms(t);
+        println!(
+            "同じ絵のフレーム {name:<9} 前 CPU {before_cpu:>6.1} / GPU {before_gpu:>5.1} ms → 今 {hit:>5.1} ms（1回目 GPU {miss_gpu:.1} ms）"
+        );
+    }
+
+    // 頼まれた範囲（960×540）だけ出力する：前は届く距離ぶん広げた範囲を出力していた
+    let s = base();
+    let pad = reach(&s).ceil() as usize + 2;
+    let o = shade(&p, &src, &s, &Texture::new(TextureParams::default(), None));
+    for (label, ow, oh, d) in [
+        (
+            "前（広げた範囲）",
+            960 + 2 * pad,
+            540 + 2 * pad,
+            480 - pad as i32,
+        ),
+        ("今（頼まれた範囲）", 960, 540, 480),
+    ] {
+        let orows = Rows {
+            stride: ow * 4,
+            flip: false,
+            h: oh,
+        };
+        let mut obuf = vec![0u8; ow * 4 * oh];
+        let t = Instant::now();
+        for _ in 0..n {
+            compose(
+                &input,
+                &mut obuf,
+                orows,
+                ow,
+                layout,
+                d,
+                d.min(270),
+                Changes::List(&o.changed),
+            );
+        }
+        println!("一部の出力 {label} {ow}×{oh} {:>6.2} ms", ms(t));
+    }
 }

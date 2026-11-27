@@ -9,8 +9,8 @@ pub mod spectral;
 pub mod texture;
 
 pub use process::{
-    hash_rows, prepare, prepare_key, prepare_key_with, process, reach, shade, Curve, Dense,
-    GroupColor, Interpolation, MidPosition, Output, OutputMode, Prepared, Settings, TextureMode,
-    MAX_COLORS, MAX_NEIGHBORS, NONE,
+    hash_rows, prepare, prepare_key, prepare_key_with, process, reach, shade, shade_key, Curve,
+    Dense, GroupColor, Interpolation, MidPosition, Output, OutputMode, Prepared, Settings,
+    TextureMode, MAX_COLORS, MAX_NEIGHBORS, NONE,
 };
 pub use texture::{DotShape, LayerTexture, Texture, TextureKind, TextureParams};

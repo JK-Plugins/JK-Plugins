@@ -592,6 +592,137 @@ pub fn prepare_key_with(w: usize, h: usize, s: &Settings, pixels: u64) -> u64 {
     k.0
 }
 
+/// 色の合成（`shade`）の結果を決める値をすべて混ぜたキー。
+/// `prep` は `prepare_key`（入力の画素と距離変換の設定）、`extra` はレイヤーのテクスチャの
+/// 画素・変換など、ここに無い値（呼び出し側で混ぜる）。
+/// 設定の項目を増やしたら、ここで分解しているのでコンパイルエラーになる（混ぜ忘れを防ぐ）
+pub fn shade_key(prep: u64, s: &Settings, t: &super::TextureParams, extra: u64) -> u64 {
+    let mut k = KeyHasher(0x4528_21e6_38d0_1377);
+    k.add(prep);
+    k.add(extra);
+    let Settings {
+        colors,
+        tolerance,
+        alpha_threshold,
+        width,
+        offset,
+        reverse,
+        curve,
+        curve_power,
+        curve_points,
+        max_neighbors,
+        amount,
+        texture_mode,
+        softness,
+        aa_samples,
+        roughness,
+        rough_scale,
+        rough_seed,
+        mid_color,
+        mid_amount,
+        mid_width,
+        mid_position,
+        interpolation,
+        stop_at_lines,
+        output,
+        origin,
+    } = s;
+    k.add(colors.len() as u64);
+    for c in colors {
+        let GroupColor {
+            rgb,
+            tolerance,
+            spread,
+            grow,
+        } = c;
+        for v in rgb {
+            k.add_f32(*v);
+        }
+        k.add_f32(*tolerance);
+        k.add_f32(*spread);
+        k.add_f32(*grow);
+    }
+    for v in [
+        *tolerance,
+        *alpha_threshold,
+        *width,
+        *offset,
+        *curve_power,
+        *amount,
+        *softness,
+        *roughness,
+        *rough_scale,
+        *mid_amount,
+        *mid_width,
+    ] {
+        k.add_f32(v);
+    }
+    k.add(curve_points.len() as u64);
+    for p in curve_points {
+        k.add_f32(p[0]);
+        k.add_f32(p[1]);
+    }
+    for v in mid_color {
+        k.add_f32(*v);
+    }
+    for v in [
+        *reverse as u64,
+        *curve as u64,
+        *max_neighbors as u64,
+        *texture_mode as u64,
+        *aa_samples as u64,
+        *rough_seed as u64,
+        *mid_position as u64,
+        *interpolation as u64,
+        *stop_at_lines as u64,
+        *output as u64,
+        origin.0 as u32 as u64,
+        origin.1 as u32 as u64,
+    ] {
+        k.add(v);
+    }
+    let super::TextureParams {
+        kind,
+        cell,
+        angle_deg,
+        seed,
+        invert,
+        offset,
+        dot_shape,
+        aspect,
+        dither_size,
+        octaves,
+        noise_contrast,
+        layer_scale,
+        layer_black,
+        layer_white,
+    } = t;
+    for v in [
+        *cell,
+        *angle_deg,
+        offset.0,
+        offset.1,
+        *aspect,
+        *dither_size,
+        *noise_contrast,
+        *layer_scale,
+        *layer_black,
+        *layer_white,
+    ] {
+        k.add_f32(v);
+    }
+    for v in [
+        *kind as u64,
+        *seed as u64,
+        *invert as u64,
+        *dot_shape as u64,
+        *octaves as u64,
+    ] {
+        k.add(v);
+    }
+    k.0
+}
+
 /// ラベル付けと色ごとの距離変換（重い部分）
 pub fn prepare(w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Prepared {
     assert_eq!(src.len(), w * h);
@@ -1059,6 +1190,96 @@ pub fn process(w: usize, h: usize, src: &[[f32; 4]], s: &Settings, texture: &Tex
 mod tests {
     use super::super::texture::TextureParams;
     use super::*;
+
+    /// 合成の結果に関わる値をどれか1つ変えると、合成のキーも変わる
+    #[test]
+    fn shade_key_changes_with_every_setting() {
+        use super::super::texture::{DotShape, TextureKind};
+        let base_s = || Settings {
+            colors: vec![
+                GroupColor::new([1.0, 0.0, 0.0]),
+                GroupColor::new([0.0, 0.0, 1.0]),
+            ],
+            curve_points: vec![[0.3, 0.6]],
+            ..Default::default()
+        };
+        let base = shade_key(1, &base_s(), &TextureParams::default(), 0);
+        // 同じ値なら同じキー
+        assert_eq!(base, shade_key(1, &base_s(), &TextureParams::default(), 0));
+        type S = fn(&mut Settings);
+        let settings: Vec<(&str, S)> = vec![
+            ("color rgb", |s| s.colors[0].rgb[1] = 0.5),
+            ("color tolerance", |s| s.colors[0].tolerance = 0.1),
+            ("color spread", |s| s.colors[1].spread = 2.0),
+            ("color grow", |s| s.colors[1].grow = 3.0),
+            ("color count", |s| s.colors.push(GroupColor::new([0.0; 3]))),
+            ("tolerance", |s| s.tolerance = 0.1),
+            ("alpha_threshold", |s| s.alpha_threshold = 0.5),
+            ("width", |s| s.width = 21.0),
+            ("offset", |s| s.offset = 1.0),
+            ("reverse", |s| s.reverse = true),
+            ("curve", |s| s.curve = Curve::Smooth),
+            ("curve_power", |s| s.curve_power = 2.0),
+            ("curve_points", |s| s.curve_points[0][1] = 0.7),
+            ("max_neighbors", |s| s.max_neighbors = 2),
+            ("amount", |s| s.amount = 0.5),
+            ("texture_mode", |s| s.texture_mode = TextureMode::Map),
+            ("softness", |s| s.softness = 1.0),
+            ("aa_samples", |s| s.aa_samples = 4),
+            ("roughness", |s| s.roughness = 1.0),
+            ("rough_scale", |s| s.rough_scale = 10.0),
+            ("rough_seed", |s| s.rough_seed = 7),
+            ("mid_color", |s| s.mid_color[2] = 0.0),
+            ("mid_amount", |s| s.mid_amount = 0.5),
+            ("mid_width", |s| s.mid_width = 0.2),
+            ("mid_position", |s| s.mid_position = MidPosition::Rim),
+            ("interpolation", |s| {
+                s.interpolation = Interpolation::Pigment
+            }),
+            ("stop_at_lines", |s| s.stop_at_lines = true),
+            ("output", |s| s.output = OutputMode::Gradient),
+            ("origin x", |s| s.origin.0 = -3),
+            ("origin y", |s| s.origin.1 = 5),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(base);
+        for (name, f) in settings {
+            let mut s = base_s();
+            f(&mut s);
+            let k = shade_key(1, &s, &TextureParams::default(), 0);
+            assert!(
+                seen.insert(k),
+                "{name} でキーが変わらない（または他と重なる）"
+            );
+        }
+        type T = fn(&mut TextureParams);
+        let textures: Vec<(&str, T)> = vec![
+            ("kind", |t| t.kind = TextureKind::Dot),
+            ("cell", |t| t.cell = 9.0),
+            ("angle", |t| t.angle_deg = 10.0),
+            ("seed", |t| t.seed = 3),
+            ("invert", |t| t.invert = true),
+            ("offset x", |t| t.offset.0 = 1.0),
+            ("offset y", |t| t.offset.1 = 1.0),
+            ("dot_shape", |t| t.dot_shape = DotShape::Square),
+            ("aspect", |t| t.aspect = 3.0),
+            ("dither_size", |t| t.dither_size = 2.0),
+            ("octaves", |t| t.octaves = 5),
+            ("noise_contrast", |t| t.noise_contrast = 1.0),
+            ("layer_scale", |t| t.layer_scale = 2.0),
+            ("layer_black", |t| t.layer_black = 0.1),
+            ("layer_white", |t| t.layer_white = 0.9),
+        ];
+        for (name, f) in textures {
+            let mut t = TextureParams::default();
+            f(&mut t);
+            let k = shade_key(1, &base_s(), &t, 0);
+            assert!(seen.insert(k), "texture {name} でキーが変わらない");
+        }
+        // 入力の画素（prepare のキー）と、呼び出し側で混ぜる値
+        assert!(seen.insert(shade_key(2, &base_s(), &TextureParams::default(), 0)));
+        assert!(seen.insert(shade_key(1, &base_s(), &TextureParams::default(), 9)));
+    }
 
     fn two_halves(w: usize, h: usize) -> Vec<[f32; 4]> {
         (0..w * h)

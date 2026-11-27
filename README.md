@@ -10,7 +10,7 @@ Those plugins are AE Plugins written by Rust.
 
 | プラグイン | バージョン | 説明 |
 |---|---|---|
-| [JK Tone Gradient](tonegradient/README.md) | [0.1.4](https://github.com/JK-Plugins/JK-Plugins/releases/tag/tonegradient-v0.1.4) | 指定した色どうしの境界をグラデーションにして、網点・線・ディザ・ノイズなどの質感をつける |
+| [JK Tone Gradient](tonegradient/README.md) | [0.1.5](https://github.com/JK-Plugins/JK-Plugins/releases/tag/tonegradient-v0.1.5) | 指定した色どうしの境界をグラデーションにして、網点・線・ディザ・ノイズなどの質感をつける |
 
 プラグイン名を押すと、それぞれの説明（パラメータ・使い方）を見られます。
 バージョンを押すと、その版のファイル（Windows：`.aex`、macOS：`.plugin.zip`）のリリースに飛びます。

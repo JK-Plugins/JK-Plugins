@@ -7,6 +7,8 @@
 //! - `plugin`：After Effects 向けの組み込み（Windows / macOS のみ）
 
 pub mod engine;
+/// 合成まで済ませた結果のキャッシュ（同じ絵が続くフレーム用）
+pub mod result_cache;
 /// ワールド（画像バッファ）の読み書き。AE に依存しないのでテストできる
 pub mod world_io;
 
