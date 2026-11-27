@@ -11,7 +11,7 @@ Those plugins are AE Plugins written by Rust.
 | プラグイン | バージョン | 説明 |
 |---|---|---|
 | [JK Tone Gradient](tonegradient/README.md) | [0.1.5](https://github.com/JK-Plugins/JK-Plugins/releases/tag/tonegradient-v0.1.5) | 指定した色どうしの境界をグラデーションにして、網点・線・ディザ・ノイズなどの質感をつける |
-| [JK Fill Erase](fillerase/README.md) | [0.1.1](https://github.com/JK-Plugins/JK-Plugins/releases/tag/fillerase-v0.1.1) | 指定した点から、塗りつぶしツールと同じように似た色でつながっている範囲を消す |
+| [JK Fill Erase](fillerase/README.md) | [0.1.0](https://github.com/JK-Plugins/JK-Plugins/releases/tag/fillerase-v0.1.0) | 指定した点から、塗りつぶしツールと同じように似た色でつながっている範囲を消す |
 
 プラグイン名を押すと、それぞれの説明（パラメータ・使い方）を見られます。
 バージョンを押すと、その版のファイル（Windows：`.aex`、macOS：`.plugin.zip`）のリリースに飛びます。
@@ -132,7 +132,7 @@ GitHub の Actions → **Release** → **Run workflow** を押すと、全プラ
 - プラグインのバージョンは各 `Cargo.toml` の `version` だけで管理します（build.rs が読んで AE のバージョンにします。
   AE の制限で minor と patch は 0〜15）
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに `version` が同じだと、
-  上げ忘れとしてリリースが止まります
+  上げ忘れとしてリリースが止まります（プラグインの中のファイルに入らない `docs/`・`examples/`・`tools/`・README だけの変更は数えません）
 - リリースのあと、配布サイト（GitHub Pages）も自動で作り直します（`.github/workflows/pages.yml`。
   中身は JK-Plugins と [fs-rs](https://github.com/JK-Plugins/fs-rs) の README のプラグイン一覧と最新のリリースから
   `.github/scripts/site.py` が作る。fs-rs のリリースは6時間ごとの作り直しで反映される）

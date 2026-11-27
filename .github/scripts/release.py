@@ -16,7 +16,7 @@
 - まとめリリースは日付のタグ（vYYYY.MM.DD、同じ日の2回目以降は .2, .3 …）
 - バージョンが新しいプラグインだけ、<crate>-v<version> の個別アーカイブを作る
 - 前回のアーカイブからプラグイン（とそれが使うワークスペース内の crate）が変わっているのに
-  バージョンが同じなら、上げ忘れとして失敗する
+  バージョンが同じなら、上げ忘れとして失敗する。docs・examples・tools・README だけの変更は数えない
 """
 import argparse
 import datetime
@@ -163,8 +163,13 @@ def version_at(ref, plugin):
     return None
 
 
+# プラグインの中身（配るファイル）に入らないもの。ここだけ変わってもバージョンは上げなくてよい
+NOT_IN_PLUGIN = ["docs", "examples", "tools", "README*.md"]
+
+
 def changed_since(ref, paths):
-    r = subprocess.run(["git", "diff", "--quiet", ref, "HEAD", "--", *paths], cwd=ROOT)
+    excludes = [f":(exclude,glob){p}/{x}" + ("" if "." in x else "/**") for p in paths for x in NOT_IN_PLUGIN]
+    r = subprocess.run(["git", "diff", "--quiet", ref, "HEAD", "--", *paths, *excludes], cwd=ROOT)
     return r.returncode != 0
 
 
