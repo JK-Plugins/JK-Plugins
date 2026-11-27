@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use after_effects as ae;
 
-use crate::world_io::{compose, read_world, Changes, Layout, Rows, Source};
+use crate::result_cache::{ChangedList, ResultCache};
+use crate::world_io::{compose, dense_to_list, read_world, Changes, Layout, Rows, Source};
 
 mod curve_ui;
 use curve_ui::CurveData;
@@ -21,6 +22,10 @@ use crate::engine::{
 static CACHE: Mutex<Vec<(u64, Arc<Prepared>)>> = Mutex::new(Vec::new());
 const CACHE_ENTRIES: usize = 4;
 const CACHE_MAX_BYTES: usize = 512 << 20;
+
+/// 色の合成まで済ませた結果のキャッシュ。同じ絵が続くフレーム（2コマ・3コマ打ち）では
+/// 合成も float への変換も飛ばして、覚えておいた結果をそのまま書き込む
+static RESULTS: ResultCache = ResultCache::new(8, 512 << 20);
 
 fn prepared(key: u64, w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc<Prepared> {
     if let Ok(mut cache) = CACHE.lock() {
@@ -54,7 +59,8 @@ fn prepared(key: u64, w: usize, h: usize, src: &[[f32; 4]], s: &Settings) -> Arc
 /// GPU を選んでいて使えるときは GPU（読み戻した全画素をそのまま書き込む）、
 /// 使えない・失敗したときは CPU（変わった画素の並びを書き込む）
 /// 入力の画素 `src` は必要なとき（距離変換をやり直すとき・CPU で合成するとき）だけ読む。
-/// `key` は入力の画素と設定から作ったキャッシュのキー
+/// `key` は入力の画素と設定から作ったキャッシュのキー。
+/// 戻り値は結果のキャッシュに入れる「変わった画素の並び」（GPU の全画素は `input` のアルファで並びにする）
 #[allow(clippy::too_many_arguments)]
 fn render_into(
     use_gpu: bool,
@@ -64,21 +70,29 @@ fn render_into(
     key: u64,
     s: &Settings,
     texture: &Texture,
+    input: &Source,
     mut write: impl FnMut(Changes),
-) {
+) -> ChangedList {
     if use_gpu {
         let done = engine::gpu::render_with(w, h, &src, key, s, texture, |px| match px {
-            Some(px) => write(Changes::Dense(px)),
-            None => write(Changes::List(&[])),
+            Some(px) => {
+                write(Changes::Dense(px));
+                dense_to_list(px, input)
+            }
+            None => {
+                write(Changes::List(&[]));
+                Vec::new()
+            }
         });
-        if done.is_ok() {
-            return;
+        if let Ok((list, _)) = done {
+            return list;
         }
     }
     let src = src();
     let p = prepared(key, w, h, &src, s);
     let out = engine::shade(&p, &src, s, texture);
     write(Changes::List(&out.changed));
+    out.changed
 }
 
 fn layout(in_data: &InData, layer: &ae::Layer) -> Layout {
@@ -832,6 +846,20 @@ fn compose_xform(e: &[f64; 16], t: &[f64; 16]) -> Option<[f64; 6]> {
     r.iter().all(|v| v.is_finite()).then_some(r)
 }
 
+/// 2つの範囲の重なり（重ならなければ大きさ 0）
+fn clip_rect(r: ae::sys::PF_LRect, q: ae::sys::PF_LRect) -> ae::sys::PF_LRect {
+    let mut out = r;
+    out.left = r.left.max(q.left);
+    out.top = r.top.max(q.top);
+    out.right = r.right.min(q.right);
+    out.bottom = r.bottom.min(q.bottom);
+    if out.left >= out.right || out.top >= out.bottom {
+        out.right = out.left;
+        out.bottom = out.top;
+    }
+    out
+}
+
 fn downsample(in_data: &InData) -> f32 {
     let x: f32 = in_data.downsample_x().into();
     let y: f32 = in_data.downsample_y().into();
@@ -1094,6 +1122,7 @@ impl Plugin {
         // 境界の向こう側まで見えるように、要求範囲をグラデーションの届く距離だけ広げる
         // （engine の処理と同じ値を使うので、部分描画でも端で結果が変わらない）
         let pad = engine::reach(&r.settings).ceil() as i32 + 2;
+        let asked = extra.output_request().rect;
         let mut req = extra.output_request();
         req.rect.left -= pad;
         req.rect.top -= pad;
@@ -1108,9 +1137,10 @@ impl Plugin {
             in_data.time_step(),
             in_data.time_scale(),
         ) {
-            let _ = extra.union_result_rect(in_result.result_rect.into());
+            // 入力は広げて読むが、出力は頼まれた範囲だけ作る（はみ出した分を合成・書き込みしない）。
+            // 出力と入力の原点のずれは do_render（compose の dx, dy）で合わせる
+            let _ = extra.union_result_rect(clip_rect(in_result.result_rect, asked).into());
             let _ = extra.union_max_result_rect(in_result.max_result_rect.into());
-            extra.set_returns_extra_pixels(true);
         }
 
         // テクスチャのレイヤーを動かしたら描き直すよう、位置・スケール・回転をキャッシュのキーに混ぜる
@@ -1212,20 +1242,9 @@ impl Plugin {
         let in_origin = input.origin();
         settings.origin = (in_origin.h, in_origin.v);
 
-        // テクスチャレイヤー：選んだチャンネルだけ使う
-        let tex_value;
-        let layer_tex = match tex_world {
-            Some(t) if tex.kind == TextureKind::Layer => {
-                tex_value = world_to_f32(t, layout(in_data, t))
-                    .iter()
-                    .map(|p| match layer_channel {
-                        2 => p[3],
-                        3 => p[0],
-                        4 => p[1],
-                        5 => p[2],
-                        _ => 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2],
-                    })
-                    .collect::<Vec<f32>>();
+        // テクスチャレイヤー：位置合わせの変換は先に作り、画素はキャッシュが効かないときだけ float にする
+        let tex_layer = match tex_world {
+            Some(t) if tex.kind == TextureKind::Layer && t.width() > 0 && t.height() > 0 => {
                 let o = t.origin();
                 // テクスチャのレイヤーの位置・スケール・回転（読めなければエフェクトのレイヤーと同じ位置）
                 let m = params
@@ -1244,17 +1263,30 @@ impl Plugin {
                     m[4] as f32,
                     (m[5] * sy as f64) as f32 - o.v as f32 - 0.5,
                 ];
-                Some(LayerTexture {
-                    width: t.width(),
-                    height: t.height(),
-                    value: &tex_value,
-                    origin: (o.h, o.v),
-                    xform,
-                })
+                Some((t, layout(in_data, t), xform))
             }
             _ => None,
         };
-        let texture = Texture::new(tex, layer_tex);
+
+        // 合成の結果のキー：入力の画素・すべての設定・テクスチャのレイヤーの画素と変換・縮小率・GPU/CPU
+        let result_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            downsample(in_data).to_bits().hash(&mut h);
+            use_gpu.hash(&mut h);
+            if let Some((t, tl, xform)) = &tex_layer {
+                let rows = rows_of(t);
+                let n = t.width() * tl.bytes_per_pixel();
+                let buf = t.buffer();
+                let lines: Vec<&[u8]> = (0..t.height())
+                    .map(|y| &buf[rows.start(y)..rows.start(y) + n])
+                    .collect();
+                engine::hash_rows(&lines).hash(&mut h);
+                (t.width(), t.height(), *tl as u8, layer_channel).hash(&mut h);
+                xform.map(f32::to_bits).hash(&mut h);
+            }
+            engine::shade_key(key, &settings, &tex, h.finish())
+        };
 
         // 出力ワールドと入力ワールドの位置合わせ（原点の差）
         let out_origin = output.origin();
@@ -1280,16 +1312,89 @@ impl Plugin {
         };
         let out_rows = rows_of(output);
         let out_buf = output.buffer_mut();
-        render_into(use_gpu, iw, ih, src, key, &settings, &texture, |changes| {
-            compose(&source, out_buf, out_rows, ow, out_layout, dx, dy, changes)
-        });
+
+        // 前と同じ絵・同じ設定なら、覚えておいた結果を書き込むだけ
+        if let Some(hit) = RESULTS.get(result_key) {
+            compose(
+                &source,
+                out_buf,
+                out_rows,
+                ow,
+                out_layout,
+                dx,
+                dy,
+                Changes::List(&hit),
+            );
+            return Ok(());
+        }
+
+        // テクスチャレイヤー：選んだチャンネルだけ使う
+        let tex_value;
+        let layer_tex = match tex_layer {
+            Some((t, tl, xform)) => {
+                tex_value = world_to_f32(t, tl)
+                    .iter()
+                    .map(|p| match layer_channel {
+                        2 => p[3],
+                        3 => p[0],
+                        4 => p[1],
+                        5 => p[2],
+                        _ => 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2],
+                    })
+                    .collect::<Vec<f32>>();
+                let o = t.origin();
+                Some(LayerTexture {
+                    width: t.width(),
+                    height: t.height(),
+                    value: &tex_value,
+                    origin: (o.h, o.v),
+                    xform,
+                })
+            }
+            None => None,
+        };
+        let texture = Texture::new(tex, layer_tex);
+
+        let list = render_into(
+            use_gpu,
+            iw,
+            ih,
+            src,
+            key,
+            &settings,
+            &texture,
+            &source,
+            |changes| compose(&source, out_buf, out_rows, ow, out_layout, dx, dy, changes),
+        );
+        RESULTS.put(result_key, Arc::new(list));
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_xform, mid_color_used, TextureKind};
+    use super::{clip_rect, compose_xform, mid_color_used, TextureKind};
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> after_effects::sys::PF_LRect {
+        after_effects::sys::PF_LRect {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// 出力は「入力の範囲」と「頼まれた範囲」の重なりだけ
+    #[test]
+    fn output_rect_is_clipped_to_request() {
+        let r = clip_rect(rect(-40, -40, 1000, 600), rect(100, 50, 400, 300));
+        assert_eq!((r.left, r.top, r.right, r.bottom), (100, 50, 400, 300));
+        let r = clip_rect(rect(0, 0, 200, 100), rect(150, 50, 400, 300));
+        assert_eq!((r.left, r.top, r.right, r.bottom), (150, 50, 200, 100));
+        // 重ならなければ大きさ 0
+        let r = clip_rect(rect(0, 0, 10, 10), rect(20, 20, 30, 30));
+        assert!(r.left >= r.right && r.top >= r.bottom);
+    }
 
     /// AE の行列（行ベクトル、平行移動は4行目）
     fn m(a: f64, b: f64, c: f64, d: f64, tx: f64, ty: f64) -> [f64; 16] {
