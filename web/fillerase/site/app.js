@@ -20,44 +20,31 @@
   var W = 0, H = 0, src = null, scale = 1, points = [];
   var bufs = null;
 
-  // ---- サンプル画像：紙の白に、黒い線（アンチエイリアスあり）とベタ塗りのキャラクター ----
+  // ---- サンプル画像：Tone Gradient のデモと同じ、塗り分けた球（配布サイトの色） ----
+  // 紙の白の背景に黒い線（アンチエイリアスあり）。同じ塗りの球を2つ置き、Contiguous の違いも見られるようにする
+  var BG = "#f9f7f2", LINE = "#151515";
+  var HI = "#f6b51d", BASE = "#ef4b24", SHADOW = "#e3204a", SHADOW2 = "#b51c7d";
   function sampleScene(w, h) {
     var c = document.createElement("canvas"); c.width = w; c.height = h;
     var g = c.getContext("2d");
-    g.fillStyle = "#f9f7f2"; g.fillRect(0, 0, w, h);
-    g.lineJoin = "round"; g.lineCap = "round"; g.strokeStyle = "#151515"; g.lineWidth = 3;
-    function shape(fill, path) { g.beginPath(); path(); g.fillStyle = fill; g.fill(); g.stroke(); }
-    // 体
-    shape("#ef4b24", function () {
-      g.moveTo(150, 360); g.quadraticCurveTo(160, 250, 240, 245); g.quadraticCurveTo(320, 250, 330, 360);
-    });
-    // 顔
-    shape("#f6dcc0", function () { g.ellipse(240, 160, 92, 100, 0, 0, Math.PI * 2); });
-    // 髪
-    shape("#2b3a8c", function () {
-      g.moveTo(145, 175); g.quadraticCurveTo(130, 60, 240, 52); g.quadraticCurveTo(350, 60, 335, 175);
-      g.quadraticCurveTo(300, 100, 240, 105); g.quadraticCurveTo(180, 100, 145, 175); g.closePath();
-    });
-    // 目と頬
-    shape("#151515", function () { g.ellipse(205, 170, 8, 13, 0, 0, Math.PI * 2); });
-    shape("#151515", function () { g.ellipse(275, 170, 8, 13, 0, 0, Math.PI * 2); });
-    g.lineWidth = 0;
-    g.fillStyle = "#f6a0a8";
-    g.beginPath(); g.ellipse(185, 205, 14, 8, 0, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.ellipse(295, 205, 14, 8, 0, 0, Math.PI * 2); g.fill();
-    g.lineWidth = 3;
-    g.beginPath(); g.moveTo(225, 222); g.quadraticCurveTo(240, 232, 255, 222); g.stroke();
-    // 星（背景の飾り）
-    function star(cx, cy, r) {
-      shape("#f6b51d", function () {
-        for (var i = 0; i < 10; i++) {
-          var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
-          g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
-        }
-        g.closePath();
-      });
+    g.fillStyle = BG; g.fillRect(0, 0, w, h);
+    function circle(x, y, r) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); }
+    function ball(cx, cy, r) {
+      g.save();
+      circle(cx, cy, r); g.clip();
+      g.fillStyle = BASE; g.fillRect(cx - r, cy - r, r * 2, r * 2);
+      // 影：右下の半分（傾いた境界）
+      g.beginPath();
+      g.moveTo(cx - r * 0.05 - r * 2 * 0.4, cy - r * 2); g.lineTo(cx - r * 0.05 + r * 2 * 0.4, cy + r * 2);
+      g.lineTo(cx + r * 2, cy + r * 2); g.lineTo(cx + r * 2, cy - r * 2); g.closePath();
+      g.fillStyle = SHADOW; g.fill();
+      circle(cx + r * 0.35, cy + r * 0.2, r * 0.45); g.fillStyle = SHADOW2; g.fill();
+      circle(cx - r * 0.35, cy - r * 0.4, r * 0.22); g.fillStyle = HI; g.fill();
+      g.restore();
+      circle(cx, cy, r); g.lineWidth = Math.max(2, r * 0.025); g.strokeStyle = LINE; g.stroke();
     }
-    star(70, 80, 30); star(410, 110, 22); star(400, 290, 34);
+    ball(w * 0.42, h * 0.5, h * 0.4);
+    ball(w * 0.84, h * 0.3, h * 0.13);
     return new Uint8ClampedArray(g.getImageData(0, 0, w, h).data);
   }
 
